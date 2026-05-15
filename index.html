@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bitácora IT — Parque Tempisque</title>
+<link rel="icon" href="https://vr506.com/assets/logo%20pt.png" />
+<link href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+  :root {
+    --pt-green: #1a4a2e;
+    --pt-green-light: #e8f5ee;
+    --pt-green-hover: #143b25;
+  }
+  * { font-family: 'Gabarito', sans-serif; }
+  body { background: #f5f7f6; }
+  .pt-bg { background-color: var(--pt-green); }
+  .pt-bg-light { background-color: var(--pt-green-light); }
+  .pt-text { color: var(--pt-green); }
+  .pt-border { border-color: var(--pt-green); }
+  .pt-btn { background-color: var(--pt-green); transition: background-color 0.2s; }
+  .pt-btn:hover { background-color: var(--pt-green-hover); }
+  .badge-pendiente { background: #fef3c7; color: #92400e; }
+  .badge-encurso { background: #dbeafe; color: #1e40af; }
+  .badge-completado { background: #d1fae5; color: #065f46; }
+  .modal-backdrop {
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(4px);
+  }
+  table tbody tr:hover { background-color: #fafafa; }
+  .empty-state { color: #9ca3af; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+
+const SUPABASE_URL = 'https://vcdgurkuoqsdvwvpnevr.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZjZGd1cmt1b3FzZHZ3dnBuZXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjYxNDQsImV4cCI6MjA4ODMwMjE0NH0._fC7LXnggqXyniyOAb2orZj-QHY1_Xrf_-FnKVju9S8';
+
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const ESTADOS = ['Pendiente', 'En curso', 'Completado'];
+
+function getBadgeClass(estado) {
+  if (estado === 'Pendiente') return 'badge-pendiente';
+  if (estado === 'En curso') return 'badge-encurso';
+  if (estado === 'Completado') return 'badge-completado';
+  return 'badge-pendiente';
+}
+
+function formatFecha(fechaStr) {
+  if (!fechaStr) return '';
+  const [y, m, d] = fechaStr.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function hoyISO() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function Modal({ open, onClose, title, children }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold pt-text">{title}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none">&times;</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function EntradaForm({ initial, onSubmit, onCancel }) {
+  const [fecha, setFecha] = useState(initial?.fecha || hoyISO());
+  const [titulo, setTitulo] = useState(initial?.titulo || '');
+  const [descripcion, setDescripcion] = useState(initial?.descripcion || '');
+  const [estado, setEstado] = useState(initial?.estado || 'Pendiente');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit() {
+    if (!titulo.trim()) return alert('El título es obligatorio');
+    if (!fecha) return alert('La fecha es obligatoria');
+    setSaving(true);
+    await onSubmit({ fecha, titulo: titulo.trim(), descripcion: descripcion.trim(), estado });
+    setSaving(false);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-1">Fecha</label>
+        <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
+      </div>
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-1">Título</label>
+        <input type="text" value={titulo} onChange={e => setTitulo(e.target.value)}
+          placeholder="Ej: Migración WAN edificio centro"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
+      </div>
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-1">Descripción</label>
+        <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)}
+          rows="4" placeholder="Detalle del trabajo realizado…"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700 resize-none" />
+      </div>
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-1">Estado</label>
+        <select value={estado} onChange={e => setEstado(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700 bg-white">
+          {ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
+        </select>
+      </div>
+      <div className="flex gap-3 pt-2">
+        <button onClick={handleSubmit} disabled={saving}
+          className="flex-1 pt-btn text-white font-semibold py-2.5 rounded-lg disabled:opacity-50">
+          {saving ? 'Guardando…' : 'Guardar'}
+        </button>
+        <button onClick={onCancel} disabled={saving}
+          className="px-6 border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-50">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [entradas, setEntradas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [modalAbierto, setModalAbierto] = useState(false);
+  const [editando, setEditando] = useState(null);
+  const [filtroEstado, setFiltroEstado] = useState('Todos');
+  const [busqueda, setBusqueda] = useState('');
+
+  async function cargarEntradas() {
+    setLoading(true);
+    setError('');
+    const { data, error } = await supabase
+      .from('bitacora_it')
+      .select('*')
+      .order('fecha', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error) {
+      setError('Error al cargar: ' + error.message);
+      setEntradas([]);
+    } else {
+      setEntradas(data || []);
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { cargarEntradas(); }, []);
+
+  async function guardar(datos) {
+    if (editando) {
+      const { error } = await supabase
+        .from('bitacora_it')
+        .update(datos)
+        .eq('id', editando.id);
+      if (error) return alert('Error al actualizar: ' + error.message);
+    } else {
+      const nuevo = { id: Date.now(), ...datos };
+      const { error } = await supabase.from('bitacora_it').insert([nuevo]);
+      if (error) return alert('Error al guardar: ' + error.message);
+    }
+    setModalAbierto(false);
+    setEditando(null);
+    cargarEntradas();
+  }
+
+  async function eliminar(id) {
+    if (!confirm('¿Eliminar esta entrada? Esta acción no se puede deshacer.')) return;
+    const { error } = await supabase.from('bitacora_it').delete().eq('id', id);
+    if (error) return alert('Error al eliminar: ' + error.message);
+    cargarEntradas();
+  }
+
+  function abrirNuevo() {
+    setEditando(null);
+    setModalAbierto(true);
+  }
+
+  function abrirEditar(entrada) {
+    setEditando(entrada);
+    setModalAbierto(true);
+  }
+
+  function exportarCSV() {
+    if (!entradas.length) return alert('No hay entradas para exportar');
+    const headers = ['Fecha', 'Título', 'Descripción', 'Estado'];
+    const rows = entradasFiltradas.map(e => [
+      e.fecha,
+      `"${(e.titulo || '').replace(/"/g, '""')}"`,
+      `"${(e.descripcion || '').replace(/"/g, '""')}"`,
+      e.estado
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bitacora-it-${hoyISO()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportarPDF() {
+    if (!entradasFiltradas.length) return alert('No hay entradas para exportar');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    // Encabezado verde institucional
+    doc.setFillColor(26, 74, 46); // #1a4a2e
+    doc.rect(0, 0, pageWidth, 28, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Bitácora IT — Parque Tempisque', 14, 13);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text('Encargado de Tecnologías de Información', 14, 20);
+
+    // Fecha de generación y filtros aplicados
+    doc.setTextColor(80, 80, 80);
+    doc.setFontSize(9);
+    const ahora = new Date();
+    const fechaGen = ahora.toLocaleDateString('es-CR') + ' ' + ahora.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' });
+    doc.text(`Generado: ${fechaGen}`, 14, 36);
+    const filtros = [];
+    if (filtroEstado !== 'Todos') filtros.push(`Estado: ${filtroEstado}`);
+    if (busqueda) filtros.push(`Búsqueda: "${busqueda}"`);
+    if (filtros.length) doc.text(`Filtros: ${filtros.join(' · ')}`, 14, 41);
+    doc.text(`Total de entradas: ${entradasFiltradas.length}`, 14, filtros.length ? 46 : 41);
+
+    // Tabla
+    const startY = filtros.length ? 52 : 47;
+    doc.autoTable({
+      startY,
+      head: [['Fecha', 'Título', 'Descripción', 'Estado']],
+      body: entradasFiltradas.map(e => [
+        formatFecha(e.fecha),
+        e.titulo || '',
+        e.descripcion || '',
+        e.estado
+      ]),
+      styles: { fontSize: 9, cellPadding: 2.5, valign: 'top' },
+      headStyles: { fillColor: [26, 74, 46], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 249] },
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 45, fontStyle: 'bold' },
+        2: { cellWidth: 'auto' },
+        3: { cellWidth: 25 }
+      },
+      margin: { left: 14, right: 14 },
+      didDrawPage: (data) => {
+        // Pie de página con número
+        const pageCount = doc.internal.getNumberOfPages();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text(
+          `Parque Tempisque · Bitácora IT · Página ${data.pageNumber} de ${pageCount}`,
+          pageWidth / 2,
+          pageHeight - 8,
+          { align: 'center' }
+        );
+      }
+    });
+
+    doc.save(`bitacora-it-${hoyISO()}.pdf`);
+  }
+
+  const entradasFiltradas = useMemo(() => {
+    return entradas.filter(e => {
+      if (filtroEstado !== 'Todos' && e.estado !== filtroEstado) return false;
+      if (busqueda) {
+        const q = busqueda.toLowerCase();
+        const enTitulo = (e.titulo || '').toLowerCase().includes(q);
+        const enDesc = (e.descripcion || '').toLowerCase().includes(q);
+        if (!enTitulo && !enDesc) return false;
+      }
+      return true;
+    });
+  }, [entradas, filtroEstado, busqueda]);
+
+  const stats = useMemo(() => ({
+    total: entradas.length,
+    pendiente: entradas.filter(e => e.estado === 'Pendiente').length,
+    encurso: entradas.filter(e => e.estado === 'En curso').length,
+    completado: entradas.filter(e => e.estado === 'Completado').length,
+  }), [entradas]);
+
+  return (
+    <div className="min-h-screen">
+      {/* Header */}
+      <header className="pt-bg text-white shadow-md">
+        <div className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <img src="https://vr506.com/assets/logo%20pt.png" alt="Parque Tempisque" className="h-12 w-auto bg-white rounded-lg p-1.5" />
+            <div>
+              <h1 className="text-2xl font-bold">Bitácora IT</h1>
+              <p className="text-sm opacity-90">Parque Tempisque · Encargado de Tecnologías de Información</p>
+            </div>
+          </div>
+          <button onClick={abrirNuevo}
+            className="bg-white pt-text font-semibold px-5 py-2.5 rounded-lg hover:bg-gray-100 shadow-sm">
+            + Nueva entrada
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto px-6 py-8">
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+            <div className="text-sm text-gray-500 font-medium">Total</div>
+            <div className="text-3xl font-bold pt-text mt-1">{stats.total}</div>
+          </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+            <div className="text-sm text-gray-500 font-medium">Pendiente</div>
+            <div className="text-3xl font-bold text-amber-700 mt-1">{stats.pendiente}</div>
+          </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+            <div className="text-sm text-gray-500 font-medium">En curso</div>
+            <div className="text-3xl font-bold text-blue-700 mt-1">{stats.encurso}</div>
+          </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+            <div className="text-sm text-gray-500 font-medium">Completado</div>
+            <div className="text-3xl font-bold text-emerald-700 mt-1">{stats.completado}</div>
+          </div>
+        </div>
+
+        {/* Filtros */}
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-4 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+          <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)}
+            placeholder="Buscar por título o descripción…"
+            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
+          <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-green-700">
+            <option value="Todos">Todos los estados</option>
+            {ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
+          </select>
+          <button onClick={exportarCSV}
+            className="border border-gray-300 text-gray-700 font-medium px-4 py-2 rounded-lg hover:bg-gray-50">
+            Exportar CSV
+          </button>
+          <button onClick={exportarPDF}
+            className="pt-btn text-white font-medium px-4 py-2 rounded-lg">
+            Exportar PDF
+          </button>
+        </div>
+
+        {/* Tabla */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          {error && (
+            <div className="bg-red-50 border-b border-red-200 text-red-800 px-4 py-3 text-sm">{error}</div>
+          )}
+          {loading ? (
+            <div className="p-12 text-center empty-state">Cargando…</div>
+          ) : entradasFiltradas.length === 0 ? (
+            <div className="p-12 text-center empty-state">
+              {entradas.length === 0
+                ? 'Aún no hay entradas. Hacé clic en "Nueva entrada" para comenzar.'
+                : 'No hay entradas que coincidan con los filtros.'}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="pt-bg-light border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-4 py-3 text-xs font-bold pt-text uppercase tracking-wider w-28">Fecha</th>
+                    <th className="text-left px-4 py-3 text-xs font-bold pt-text uppercase tracking-wider">Título / Descripción</th>
+                    <th className="text-left px-4 py-3 text-xs font-bold pt-text uppercase tracking-wider w-32">Estado</th>
+                    <th className="text-right px-4 py-3 text-xs font-bold pt-text uppercase tracking-wider w-32">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {entradasFiltradas.map(e => (
+                    <tr key={e.id}>
+                      <td className="px-4 py-3 text-sm text-gray-700 font-medium align-top whitespace-nowrap">{formatFecha(e.fecha)}</td>
+                      <td className="px-4 py-3 align-top">
+                        <div className="font-semibold text-gray-900">{e.titulo}</div>
+                        {e.descripcion && (
+                          <div className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{e.descripcion}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${getBadgeClass(e.estado)}`}>
+                          {e.estado}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 align-top text-right whitespace-nowrap">
+                        <button onClick={() => abrirEditar(e)}
+                          className="text-sm pt-text font-semibold hover:underline mr-3">Editar</button>
+                        <button onClick={() => eliminar(e.id)}
+                          className="text-sm text-red-600 font-semibold hover:underline">Eliminar</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <footer className="text-center text-xs text-gray-400 mt-8">
+          Parque Tempisque · Bitácora IT · {new Date().getFullYear()}
+        </footer>
+      </main>
+
+      <Modal
+        open={modalAbierto}
+        onClose={() => { setModalAbierto(false); setEditando(null); }}
+        title={editando ? 'Editar entrada' : 'Nueva entrada'}>
+        <EntradaForm
+          initial={editando}
+          onSubmit={guardar}
+          onCancel={() => { setModalAbierto(false); setEditando(null); }}
+        />
+      </Modal>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
