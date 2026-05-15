@@ -69,23 +69,62 @@
   .recordatorio-proximo { background: #fef3c7 !important; border: 1px solid #fcd34d !important; }
   .notif-btn-on { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
   .notif-btn-off { background: white; color: #374151; border: 1px solid #d1d5db; }
+  .mic-btn {
+    width: 36px; height: 36px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    border: 1px solid #d1d5db;
+    background: white;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .mic-btn:hover { background: #f9fafb; }
+  .mic-btn.recording {
+    background: #dc2626; color: white; border-color: #dc2626;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+    50% { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+  }
+  .adjunto-chip {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    background: white; border: 1px solid #e5e7eb;
+    padding: 0.35rem 0.6rem; border-radius: 0.4rem;
+    font-size: 0.78rem; color: #374151;
+    max-width: 100%;
+  }
+  .adjunto-chip .nombre {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 160px;
+  }
+  .progress-bar {
+    height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden;
+  }
+  .progress-bar > div {
+    height: 100%; background: var(--pt-green); transition: width 0.2s;
+  }
 </style>
 </head>
 <body>
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useMemo, useRef } = React;
 
 const SUPABASE_URL = 'https://vcdgurkuoqsdvwvpnevr.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZjZGd1cmt1b3FzZHZ3dnBuZXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjYxNDQsImV4cCI6MjA4ODMwMjE0NH0._fC7LXnggqXyniyOAb2orZj-QHY1_Xrf_-FnKVju9S8';
 const VAPID_PUBLIC_KEY = 'BPocEbVPgChTKG9y8NRkohuCfMxNCKl1bmoXOnYL7Zv56q0KF6T6MFrQWoDkoVgaHODCL2LBPvZOb61-eY3aHmE';
 const NOTIF_EMAIL = 'acamposp@parquetempisque.com';
+const STORAGE_BUCKET = 'adjuntos';
+const MAX_FILE_MB = 50;
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const ESTADOS = ['Pendiente', 'En curso', 'Completado'];
 const POSTIT_COLORS = ['postit-yellow', 'postit-green', 'postit-blue', 'postit-pink', 'postit-orange'];
+
+/* ==================== HELPERS ==================== */
 
 function getBadgeClass(estado) {
   if (estado === 'Pendiente') return 'badge-pendiente';
@@ -113,67 +152,48 @@ function formatFechaHora(isoStr) {
 
 function hoyISO() {
   const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-// Convierte un ISO timestamptz a formato datetime-local (YYYY-MM-DDTHH:mm) en hora local
 function isoADatetimeLocal(isoStr) {
   if (!isoStr) return '';
   const d = new Date(isoStr);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const min = String(d.getMinutes()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
-// Convierte un datetime-local (YYYY-MM-DDTHH:mm) a ISO con zona local
 function datetimeLocalAISO(dtLocal) {
   if (!dtLocal) return null;
-  // new Date interpreta el string sin Z como hora local
   return new Date(dtLocal).toISOString();
 }
 
-// Diferencia en minutos entre el recordatorio y ahora
 function minutosHasta(isoStr) {
   if (!isoStr) return null;
-  const objetivo = new Date(isoStr);
-  const ahora = new Date();
-  return Math.round((objetivo - ahora) / 60000);
+  return Math.round((new Date(isoStr) - new Date()) / 60000);
 }
 
-// Texto descriptivo del tiempo faltante o pasado
 function describirTiempo(isoStr) {
   const mins = minutosHasta(isoStr);
   if (mins === null) return '';
   const absMin = Math.abs(mins);
   const pasado = mins < 0;
-
   let texto;
   if (absMin < 1) texto = 'Ahora mismo';
   else if (absMin < 60) texto = `${absMin} min`;
   else if (absMin < 1440) {
-    const h = Math.floor(absMin / 60);
-    const m = absMin % 60;
+    const h = Math.floor(absMin / 60); const m = absMin % 60;
     texto = m === 0 ? `${h}h` : `${h}h ${m}min`;
   } else {
-    const d = Math.floor(absMin / 1440);
-    const h = Math.floor((absMin % 1440) / 60);
+    const d = Math.floor(absMin / 1440); const h = Math.floor((absMin % 1440) / 60);
     texto = h === 0 ? `${d} día${d !== 1 ? 's' : ''}` : `${d}d ${h}h`;
   }
   return pasado ? `Vencido hace ${texto}` : `En ${texto}`;
 }
 
-// Categoría visual del recordatorio
 function categoriaRecordatorio(isoStr) {
   const mins = minutosHasta(isoStr);
   if (mins === null) return 'sin';
   if (mins < 0) return 'vencido';
-  if (mins <= 1440) return 'proximo'; // ≤ 24h
+  if (mins <= 1440) return 'proximo';
   return 'futuro';
 }
 
@@ -190,11 +210,85 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
+function formatTamano(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/(1024*1024)).toFixed(1) + ' MB';
+}
+
+function formatDuracion(segs) {
+  const m = Math.floor(segs / 60);
+  const s = segs % 60;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function tipoIcono(mimeOrName) {
+  const s = (mimeOrName || '').toLowerCase();
+  if (s.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(s)) return '🖼️';
+  if (s.startsWith('video/') || /\.(mp4|mov|webm|avi|mkv)$/i.test(s)) return '🎥';
+  if (s.startsWith('audio/') || /\.(mp3|wav|webm|m4a|ogg)$/i.test(s)) return '🎵';
+  if (s.includes('pdf') || /\.pdf$/i.test(s)) return '📄';
+  if (/word|\.docx?$/i.test(s)) return '📝';
+  if (/excel|sheet|\.xlsx?$/i.test(s) || /\.csv$/i.test(s)) return '📊';
+  if (/zip|rar|7z|tar|gz/i.test(s)) return '🗜️';
+  return '📎';
+}
+
+function esImagen(adj) {
+  return (adj.tipo || '').startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(adj.nombre || '');
+}
+
+function esVideo(adj) {
+  return (adj.tipo || '').startsWith('video/') || /\.(mp4|mov|webm|avi|mkv)$/i.test(adj.nombre || '');
+}
+
+function esAudio(adj) {
+  return (adj.tipo || '').startsWith('audio/') || /\.(mp3|wav|webm|m4a|ogg)$/i.test(adj.nombre || '');
+}
+
+/* ==================== UPLOAD HELPER ==================== */
+
+async function subirArchivo(file, carpeta, onProgress) {
+  if (file.size > MAX_FILE_MB * 1024 * 1024) {
+    throw new Error(`El archivo excede el límite de ${MAX_FILE_MB} MB`);
+  }
+  const timestamp = Date.now();
+  const nombreLimpio = file.name.replace(/[^\w.\-]/g, '_');
+  const path = `${carpeta}/${timestamp}_${nombreLimpio}`;
+
+  // Simulamos progreso ya que Supabase JS v2 no expone progress en upload
+  if (onProgress) onProgress(20);
+  const { data, error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(path, file, { cacheControl: '3600', upsert: false });
+  if (error) throw error;
+  if (onProgress) onProgress(80);
+
+  const { data: pub } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+  if (onProgress) onProgress(100);
+
+  return {
+    nombre: file.name,
+    url: pub.publicUrl,
+    tipo: file.type || '',
+    tamano: file.size,
+    path
+  };
+}
+
+async function eliminarArchivo(path) {
+  if (!path) return;
+  await supabase.storage.from(STORAGE_BUCKET).remove([path]);
+}
+
+/* ==================== COMPONENTES UI ==================== */
+
 function Modal({ open, onClose, title, children }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold pt-text">{title}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none">&times;</button>
@@ -205,21 +299,321 @@ function Modal({ open, onClose, title, children }) {
   );
 }
 
-/* ===================== BITÁCORA ===================== */
+/* Botón de dictado por voz */
+function BotonMicrofono({ onTranscript, disabled }) {
+  const [escuchando, setEscuchando] = useState(false);
+  const [soportado, setSoportado] = useState(true);
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setSoportado(false); return; }
+  }, []);
+
+  function toggle() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+
+    if (escuchando) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const rec = new SR();
+    rec.lang = 'es-CR';
+    rec.continuous = true;
+    rec.interimResults = false;
+
+    rec.onresult = (event) => {
+      let texto = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) texto += event.results[i][0].transcript;
+      }
+      if (texto) onTranscript(texto);
+    };
+    rec.onerror = (e) => {
+      console.error('Error dictado:', e.error);
+      if (e.error === 'not-allowed') alert('Permiso de micrófono denegado');
+      setEscuchando(false);
+    };
+    rec.onend = () => setEscuchando(false);
+
+    recognitionRef.current = rec;
+    rec.start();
+    setEscuchando(true);
+  }
+
+  if (!soportado) return null;
+
+  return (
+    <button type="button" onClick={toggle} disabled={disabled}
+      className={`mic-btn ${escuchando ? 'recording' : ''}`}
+      title={escuchando ? 'Detener dictado' : 'Dictar texto'}>
+      🎤
+    </button>
+  );
+}
+
+/* Grabador de audio (memo de voz) */
+function GrabadorAudio({ onAudioListo, disabled }) {
+  const [grabando, setGrabando] = useState(false);
+  const [duracion, setDuracion] = useState(0);
+  const [audioBlob, setAudioBlob] = useState(null);
+  const [audioURL, setAudioURL] = useState('');
+  const [soportado, setSoportado] = useState(true);
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    if (!navigator.mediaDevices || !window.MediaRecorder) setSoportado(false);
+  }, []);
+
+  async function iniciar() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        setAudioBlob(blob);
+        setAudioURL(URL.createObjectURL(blob));
+        stream.getTracks().forEach(t => t.stop());
+      };
+      mr.start();
+      mediaRecorderRef.current = mr;
+      setGrabando(true);
+      setDuracion(0);
+      timerRef.current = setInterval(() => setDuracion(d => d + 1), 1000);
+    } catch (e) {
+      alert('No se pudo acceder al micrófono: ' + e.message);
+    }
+  }
+
+  function detener() {
+    mediaRecorderRef.current?.stop();
+    clearInterval(timerRef.current);
+    setGrabando(false);
+  }
+
+  function adjuntar() {
+    if (!audioBlob) return;
+    const nombre = `memo-voz-${Date.now()}.webm`;
+    const file = new File([audioBlob], nombre, { type: 'audio/webm' });
+    onAudioListo(file);
+    descartar();
+  }
+
+  function descartar() {
+    if (audioURL) URL.revokeObjectURL(audioURL);
+    setAudioBlob(null);
+    setAudioURL('');
+    setDuracion(0);
+  }
+
+  if (!soportado) return null;
+
+  if (audioBlob) {
+    return (
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+        <div className="text-xs font-semibold text-gray-600">Audio grabado · {formatDuracion(duracion)}</div>
+        <audio controls src={audioURL} className="w-full h-10"></audio>
+        <div className="flex gap-2">
+          <button type="button" onClick={adjuntar}
+            className="flex-1 pt-btn text-white text-sm font-semibold py-2 rounded-lg">Adjuntar</button>
+          <button type="button" onClick={descartar}
+            className="px-4 border border-gray-300 text-gray-700 text-sm font-semibold py-2 rounded-lg hover:bg-gray-50">Descartar</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button type="button" onClick={grabando ? detener : iniciar} disabled={disabled}
+      className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold border ${grabando ? 'bg-red-50 text-red-700 border-red-300' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>
+      {grabando ? (
+        <>
+          <span className="inline-block w-2 h-2 bg-red-600 rounded-full animate-pulse"></span>
+          Detener · {formatDuracion(duracion)}
+        </>
+      ) : (
+        <>🎙️ Grabar memo de voz</>
+      )}
+    </button>
+  );
+}
+
+/* Gestor de adjuntos en el form */
+function GestorAdjuntos({ adjuntos, setAdjuntos, carpeta }) {
+  const [subiendo, setSubiendo] = useState({}); // {nombre: porcentaje}
+  const fileInputRef = useRef(null);
+
+  async function manejarArchivos(files) {
+    for (const file of files) {
+      const id = `${file.name}-${Date.now()}`;
+      setSubiendo(s => ({ ...s, [id]: 0 }));
+      try {
+        const adj = await subirArchivo(file, carpeta, (p) => {
+          setSubiendo(s => ({ ...s, [id]: p }));
+        });
+        setAdjuntos(prev => [...prev, adj]);
+      } catch (e) {
+        alert(`Error al subir "${file.name}": ${e.message}`);
+      } finally {
+        setSubiendo(s => {
+          const c = { ...s }; delete c[id]; return c;
+        });
+      }
+    }
+  }
+
+  async function quitar(idx) {
+    const adj = adjuntos[idx];
+    if (!confirm(`¿Quitar "${adj.nombre}"?`)) return;
+    try {
+      await eliminarArchivo(adj.path);
+    } catch (e) { /* ignorar */ }
+    setAdjuntos(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div className="space-y-2">
+      <input ref={fileInputRef} type="file" multiple
+        onChange={e => { manejarArchivos(Array.from(e.target.files)); e.target.value = ''; }}
+        style={{ display: 'none' }} />
+      <button type="button" onClick={() => fileInputRef.current?.click()}
+        className="w-full py-2 rounded-lg text-sm font-semibold bg-white text-gray-700 border border-gray-300 hover:bg-gray-50">
+        📎 Adjuntar archivo
+      </button>
+
+      <GrabadorAudio onAudioListo={(file) => manejarArchivos([file])} />
+
+      {Object.entries(subiendo).map(([id, pct]) => (
+        <div key={id} className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs">
+          <div className="text-blue-800 mb-1">Subiendo… {pct}%</div>
+          <div className="progress-bar"><div style={{ width: pct + '%' }}></div></div>
+        </div>
+      ))}
+
+      {adjuntos.length > 0 && (
+        <div className="space-y-2 mt-2">
+          {adjuntos.map((adj, idx) => (
+            <div key={idx} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg p-2">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className="text-lg">{tipoIcono(adj.tipo || adj.nombre)}</span>
+                <div className="min-w-0 flex-1">
+                  <a href={adj.url} target="_blank" rel="noopener"
+                    className="text-sm font-medium text-gray-800 hover:underline block truncate">
+                    {adj.nombre}
+                  </a>
+                  <div className="text-xs text-gray-500">{formatTamano(adj.tamano)}</div>
+                </div>
+              </div>
+              <button type="button" onClick={() => quitar(idx)}
+                className="text-red-600 hover:text-red-800 text-sm font-semibold px-2">✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Visualización de adjuntos en tarjetas/tablas */
+function VistaAdjuntos({ adjuntos, compacto = false }) {
+  if (!adjuntos || adjuntos.length === 0) return null;
+
+  const imagenes = adjuntos.filter(esImagen);
+  const otros = adjuntos.filter(a => !esImagen(a));
+
+  if (compacto) {
+    return (
+      <div className="flex flex-wrap gap-1 mt-2">
+        {imagenes.slice(0, 3).map((adj, i) => (
+          <a key={i} href={adj.url} target="_blank" rel="noopener" className="block">
+            <img src={adj.url} alt={adj.nombre}
+              className="w-12 h-12 object-cover rounded border border-gray-300" />
+          </a>
+        ))}
+        {imagenes.length > 3 && (
+          <div className="w-12 h-12 rounded border border-gray-300 bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600">
+            +{imagenes.length - 3}
+          </div>
+        )}
+        {otros.map((adj, i) => (
+          <a key={'o'+i} href={adj.url} target="_blank" rel="noopener"
+            className="adjunto-chip" title={adj.nombre}>
+            <span>{tipoIcono(adj.tipo || adj.nombre)}</span>
+            <span className="nombre">{adj.nombre}</span>
+          </a>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 space-y-2">
+      {imagenes.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {imagenes.map((adj, i) => (
+            <a key={i} href={adj.url} target="_blank" rel="noopener">
+              <img src={adj.url} alt={adj.nombre}
+                className="w-full h-20 object-cover rounded border border-gray-300 hover:opacity-80" />
+            </a>
+          ))}
+        </div>
+      )}
+      {otros.map((adj, i) => (
+        <div key={'o'+i}>
+          {esAudio(adj) ? (
+            <div className="bg-gray-50 border border-gray-200 rounded p-2">
+              <div className="text-xs font-semibold text-gray-600 mb-1">🎵 {adj.nombre}</div>
+              <audio controls src={adj.url} className="w-full h-8"></audio>
+            </div>
+          ) : esVideo(adj) ? (
+            <div className="bg-gray-50 border border-gray-200 rounded p-2">
+              <div className="text-xs font-semibold text-gray-600 mb-1">🎥 {adj.nombre}</div>
+              <video controls src={adj.url} className="w-full max-h-48 rounded"></video>
+            </div>
+          ) : (
+            <a href={adj.url} target="_blank" rel="noopener"
+              className="adjunto-chip block w-full">
+              <span>{tipoIcono(adj.tipo || adj.nombre)}</span>
+              <span className="nombre flex-1">{adj.nombre}</span>
+              <span className="text-gray-500 text-xs">{formatTamano(adj.tamano)}</span>
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ==================== BITÁCORA ==================== */
 
 function EntradaForm({ initial, onSubmit, onCancel }) {
   const [fecha, setFecha] = useState(initial?.fecha || hoyISO());
   const [titulo, setTitulo] = useState(initial?.titulo || '');
   const [descripcion, setDescripcion] = useState(initial?.descripcion || '');
   const [estado, setEstado] = useState(initial?.estado || 'Pendiente');
+  const [adjuntos, setAdjuntos] = useState(initial?.adjuntos || []);
   const [saving, setSaving] = useState(false);
+  const idEntrada = useRef(initial?.id || Date.now()).current;
 
   async function handleSubmit() {
     if (!titulo.trim()) return alert('El título es obligatorio');
     if (!fecha) return alert('La fecha es obligatoria');
     setSaving(true);
-    await onSubmit({ fecha, titulo: titulo.trim(), descripcion: descripcion.trim(), estado });
+    await onSubmit({
+      fecha, titulo: titulo.trim(), descripcion: descripcion.trim(),
+      estado, adjuntos
+    }, idEntrada);
     setSaving(false);
+  }
+
+  function agregarDictado(texto) {
+    setDescripcion(prev => prev ? prev + ' ' + texto : texto);
   }
 
   return (
@@ -236,9 +630,12 @@ function EntradaForm({ initial, onSubmit, onCancel }) {
           className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
       </div>
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1">Descripción</label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-sm font-semibold text-gray-700">Descripción</label>
+          <BotonMicrofono onTranscript={agregarDictado} />
+        </div>
         <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)}
-          rows="4" placeholder="Detalle del trabajo realizado…"
+          rows="4" placeholder="Detalle del trabajo realizado… (también podés dictar 🎤)"
           className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700 resize-none" />
       </div>
       <div>
@@ -247,6 +644,10 @@ function EntradaForm({ initial, onSubmit, onCancel }) {
           className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700 bg-white">
           {ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
         </select>
+      </div>
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-2">Adjuntos</label>
+        <GestorAdjuntos adjuntos={adjuntos} setAdjuntos={setAdjuntos} carpeta={`bitacora/${idEntrada}`} />
       </div>
       <div className="flex gap-3 pt-2">
         <button onClick={handleSubmit} disabled={saving}
@@ -270,6 +671,7 @@ function VistaBitacora() {
   const [editando, setEditando] = useState(null);
   const [filtroEstado, setFiltroEstado] = useState('Todos');
   const [busqueda, setBusqueda] = useState('');
+  const [verAdjuntos, setVerAdjuntos] = useState(null);
 
   async function cargar() {
     setLoading(true); setError('');
@@ -283,20 +685,25 @@ function VistaBitacora() {
   }
   useEffect(() => { cargar(); }, []);
 
-  async function guardar(datos) {
+  async function guardar(datos, id) {
     if (editando) {
       const { error } = await supabase.from('bitacora_it').update(datos).eq('id', editando.id);
       if (error) return alert('Error al actualizar: ' + error.message);
     } else {
-      const { error } = await supabase.from('bitacora_it').insert([{ id: Date.now(), ...datos }]);
+      const { error } = await supabase.from('bitacora_it').insert([{ id, ...datos }]);
       if (error) return alert('Error al guardar: ' + error.message);
     }
     setModalAbierto(false); setEditando(null); cargar();
   }
 
-  async function eliminar(id) {
-    if (!confirm('¿Eliminar esta entrada?')) return;
-    const { error } = await supabase.from('bitacora_it').delete().eq('id', id);
+  async function eliminar(entrada) {
+    if (!confirm('¿Eliminar esta entrada? Se borrarán también sus adjuntos.')) return;
+    // Borrar adjuntos del storage
+    if (entrada.adjuntos && entrada.adjuntos.length) {
+      const paths = entrada.adjuntos.map(a => a.path).filter(Boolean);
+      if (paths.length) await supabase.storage.from(STORAGE_BUCKET).remove(paths);
+    }
+    const { error } = await supabase.from('bitacora_it').delete().eq('id', entrada.id);
     if (error) return alert('Error: ' + error.message);
     cargar();
   }
@@ -319,12 +726,13 @@ function VistaBitacora() {
 
   function exportarCSV() {
     if (!entradasFiltradas.length) return alert('No hay entradas para exportar');
-    const headers = ['Fecha', 'Título', 'Descripción', 'Estado'];
+    const headers = ['Fecha', 'Título', 'Descripción', 'Estado', 'Adjuntos'];
     const rows = entradasFiltradas.map(e => [
       e.fecha,
       `"${(e.titulo || '').replace(/"/g, '""')}"`,
       `"${(e.descripcion || '').replace(/"/g, '""')}"`,
-      e.estado
+      e.estado,
+      (e.adjuntos || []).length
     ]);
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -358,12 +766,12 @@ function VistaBitacora() {
     const startY = filtros.length ? 52 : 47;
     doc.autoTable({
       startY,
-      head: [['Fecha', 'Título', 'Descripción', 'Estado']],
-      body: entradasFiltradas.map(e => [formatFecha(e.fecha), e.titulo || '', e.descripcion || '', e.estado]),
+      head: [['Fecha', 'Título', 'Descripción', 'Estado', 'Adj.']],
+      body: entradasFiltradas.map(e => [formatFecha(e.fecha), e.titulo || '', e.descripcion || '', e.estado, (e.adjuntos || []).length]),
       styles: { fontSize: 9, cellPadding: 2.5, valign: 'top' },
       headStyles: { fillColor: [26, 74, 46], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 250, 249] },
-      columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 45, fontStyle: 'bold' }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 25 } },
+      columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 42, fontStyle: 'bold' }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 23 }, 4: { cellWidth: 12, halign: 'center' } },
       margin: { left: 14, right: 14 },
       didDrawPage: (data) => {
         const pageCount = doc.internal.getNumberOfPages();
@@ -432,7 +840,7 @@ function VistaBitacora() {
                   <th className="text-left px-4 py-3 text-xs font-bold pt-text uppercase tracking-wider w-28">Fecha</th>
                   <th className="text-left px-4 py-3 text-xs font-bold pt-text uppercase tracking-wider">Título / Descripción</th>
                   <th className="text-left px-4 py-3 text-xs font-bold pt-text uppercase tracking-wider w-32">Estado</th>
-                  <th className="text-right px-4 py-3 text-xs font-bold pt-text uppercase tracking-wider w-32">Acciones</th>
+                  <th className="text-right px-4 py-3 text-xs font-bold pt-text uppercase tracking-wider w-40">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -442,13 +850,19 @@ function VistaBitacora() {
                     <td className="px-4 py-3 align-top">
                       <div className="font-semibold text-gray-900">{e.titulo}</div>
                       {e.descripcion && <div className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{e.descripcion}</div>}
+                      {e.adjuntos && e.adjuntos.length > 0 && (
+                        <button onClick={() => setVerAdjuntos(e)}
+                          className="text-xs pt-text font-semibold mt-2 hover:underline">
+                          📎 {e.adjuntos.length} adjunto{e.adjuntos.length !== 1 ? 's' : ''}
+                        </button>
+                      )}
                     </td>
                     <td className="px-4 py-3 align-top">
                       <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${getBadgeClass(e.estado)}`}>{e.estado}</span>
                     </td>
                     <td className="px-4 py-3 align-top text-right whitespace-nowrap">
                       <button onClick={() => { setEditando(e); setModalAbierto(true); }} className="text-sm pt-text font-semibold hover:underline mr-3">Editar</button>
-                      <button onClick={() => eliminar(e.id)} className="text-sm text-red-600 font-semibold hover:underline">Eliminar</button>
+                      <button onClick={() => eliminar(e)} className="text-sm text-red-600 font-semibold hover:underline">Eliminar</button>
                     </td>
                   </tr>
                 ))}
@@ -462,17 +876,23 @@ function VistaBitacora() {
         <EntradaForm initial={editando} onSubmit={guardar}
           onCancel={() => { setModalAbierto(false); setEditando(null); }} />
       </Modal>
+      <Modal open={!!verAdjuntos} onClose={() => setVerAdjuntos(null)}
+        title={verAdjuntos ? `Adjuntos · ${verAdjuntos.titulo}` : ''}>
+        {verAdjuntos && <VistaAdjuntos adjuntos={verAdjuntos.adjuntos || []} />}
+      </Modal>
     </div>
   );
 }
 
-/* ===================== NOTAS RÁPIDAS ===================== */
+/* ==================== NOTAS RÁPIDAS ==================== */
 
 function NotaForm({ initial, onSubmit, onCancel }) {
   const [fecha, setFecha] = useState(initial?.fecha || hoyISO());
   const [nota, setNota] = useState(initial?.nota || '');
   const [recordatorio, setRecordatorio] = useState(initial?.recordatorio ? isoADatetimeLocal(initial.recordatorio) : '');
+  const [adjuntos, setAdjuntos] = useState(initial?.adjuntos || []);
   const [saving, setSaving] = useState(false);
+  const idNota = useRef(initial?.id || Date.now()).current;
 
   async function handleSubmit() {
     if (!nota.trim()) return alert('La nota no puede estar vacía');
@@ -480,13 +900,14 @@ function NotaForm({ initial, onSubmit, onCancel }) {
     setSaving(true);
     const recordatorioISO = recordatorio ? datetimeLocalAISO(recordatorio) : null;
     await onSubmit({
-      fecha,
-      nota: nota.trim(),
-      recordatorio: recordatorioISO,
-      // Si se cambia el recordatorio, reseteamos las flags de notificación
+      fecha, nota: nota.trim(), recordatorio: recordatorioISO, adjuntos,
       ...(recordatorioISO !== initial?.recordatorio ? { notificado_push: false, notificado_email: false } : {})
-    });
+    }, idNota);
     setSaving(false);
+  }
+
+  function agregarDictado(texto) {
+    setNota(prev => prev ? prev + ' ' + texto : texto);
   }
 
   return (
@@ -497,9 +918,12 @@ function NotaForm({ initial, onSubmit, onCancel }) {
           className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
       </div>
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1">Nota</label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-sm font-semibold text-gray-700">Nota</label>
+          <BotonMicrofono onTranscript={agregarDictado} />
+        </div>
         <textarea value={nota} onChange={e => setNota(e.target.value)} rows="5"
-          placeholder="Escribí la nota rápida…"
+          placeholder="Escribí la nota rápida… (también podés dictar 🎤)"
           className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700 resize-none" />
       </div>
       <div>
@@ -516,11 +940,10 @@ function NotaForm({ initial, onSubmit, onCancel }) {
             </button>
           )}
         </div>
-        {recordatorio && (
-          <p className="text-xs text-gray-500 mt-1">
-            Te notificaremos por push y por email a las {recordatorio.split('T')[1] || '--:--'} del {recordatorio.split('T')[0] || ''}.
-          </p>
-        )}
+      </div>
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-2">Adjuntos</label>
+        <GestorAdjuntos adjuntos={adjuntos} setAdjuntos={setAdjuntos} carpeta={`notas/${idNota}`} />
       </div>
       <div className="flex gap-3 pt-2">
         <button onClick={handleSubmit} disabled={saving}
@@ -540,14 +963,8 @@ function PostItCard({ nota, onEdit, onDelete }) {
   const cat = categoriaRecordatorio(nota.recordatorio);
   let recordatorioClase = '';
   let recordatorioColor = 'text-gray-600';
-
-  if (cat === 'vencido') {
-    recordatorioClase = 'recordatorio-vencido';
-    recordatorioColor = 'text-red-700';
-  } else if (cat === 'proximo') {
-    recordatorioClase = 'recordatorio-proximo';
-    recordatorioColor = 'text-amber-700';
-  }
+  if (cat === 'vencido') { recordatorioClase = 'recordatorio-vencido'; recordatorioColor = 'text-red-700'; }
+  else if (cat === 'proximo') { recordatorioClase = 'recordatorio-proximo'; recordatorioColor = 'text-amber-700'; }
 
   const colorBase = recordatorioClase || pickColor(nota.id);
   const textoTiempo = nota.recordatorio ? describirTiempo(nota.recordatorio) : '';
@@ -557,13 +974,14 @@ function PostItCard({ nota, onEdit, onDelete }) {
       <div className="flex justify-between items-start mb-2">
         <div className="text-xs font-semibold text-gray-600">{formatFecha(nota.fecha)}</div>
         <div className="flex gap-2">
-          <button onClick={() => onEdit(nota)} title="Editar"
-            className="text-gray-500 hover:text-gray-800 text-sm">✎</button>
-          <button onClick={() => onDelete(nota.id)} title="Eliminar"
-            className="text-gray-500 hover:text-red-600 text-sm">✕</button>
+          <button onClick={() => onEdit(nota)} title="Editar" className="text-gray-500 hover:text-gray-800 text-sm">✎</button>
+          <button onClick={() => onDelete(nota)} title="Eliminar" className="text-gray-500 hover:text-red-600 text-sm">✕</button>
         </div>
       </div>
       <div className="flex-1 text-gray-800 text-sm whitespace-pre-wrap break-words">{nota.nota}</div>
+      {nota.adjuntos && nota.adjuntos.length > 0 && (
+        <VistaAdjuntos adjuntos={nota.adjuntos} compacto />
+      )}
       {nota.recordatorio && (
         <div className="mt-3 pt-2 border-t border-black/10">
           <div className="flex items-start gap-1.5">
@@ -580,57 +998,36 @@ function PostItCard({ nota, onEdit, onDelete }) {
 }
 
 function BotonNotificaciones() {
-  const [estado, setEstado] = useState('cargando'); // cargando, no-soportado, denegado, no-suscrito, suscrito
+  const [estado, setEstado] = useState('cargando');
   const [procesando, setProcesando] = useState(false);
 
-  useEffect(() => {
-    verificarEstado();
-  }, []);
+  useEffect(() => { verificarEstado(); }, []);
 
   async function verificarEstado() {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      setEstado('no-soportado');
-      return;
-    }
-    if (Notification.permission === 'denied') {
-      setEstado('denegado');
-      return;
-    }
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) { setEstado('no-soportado'); return; }
+    if (Notification.permission === 'denied') { setEstado('denegado'); return; }
     try {
       const reg = await navigator.serviceWorker.getRegistration();
-      if (!reg) {
-        setEstado('no-suscrito');
-        return;
-      }
+      if (!reg) { setEstado('no-suscrito'); return; }
       const sub = await reg.pushManager.getSubscription();
       setEstado(sub ? 'suscrito' : 'no-suscrito');
-    } catch (e) {
-      setEstado('no-suscrito');
-    }
+    } catch (e) { setEstado('no-suscrito'); }
   }
 
   async function activar() {
     setProcesando(true);
     try {
-      // Registrar service worker
       const reg = await navigator.serviceWorker.register('./sw.js');
       await navigator.serviceWorker.ready;
-
-      // Pedir permiso
       const permiso = await Notification.requestPermission();
       if (permiso !== 'granted') {
         setEstado(permiso === 'denied' ? 'denegado' : 'no-suscrito');
-        setProcesando(false);
-        return;
+        setProcesando(false); return;
       }
-
-      // Crear suscripción
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
       });
-
-      // Guardar en Supabase
       const subJSON = sub.toJSON();
       const { error } = await supabase.from('push_subscriptions').upsert({
         id: Date.now(),
@@ -638,18 +1035,10 @@ function BotonNotificaciones() {
         keys: subJSON.keys,
         user_agent: navigator.userAgent
       }, { onConflict: 'endpoint' });
-
-      if (error) {
-        alert('Error guardando suscripción: ' + error.message);
-        setProcesando(false);
-        return;
-      }
-
+      if (error) { alert('Error guardando suscripción: ' + error.message); setProcesando(false); return; }
       setEstado('suscrito');
-      alert('¡Notificaciones activadas! Te avisaremos cuando se cumpla un recordatorio.');
-    } catch (e) {
-      alert('Error: ' + e.message);
-    }
+      alert('¡Notificaciones activadas!');
+    } catch (e) { alert('Error: ' + e.message); }
     setProcesando(false);
   }
 
@@ -665,45 +1054,15 @@ function BotonNotificaciones() {
         }
       }
       setEstado('no-suscrito');
-    } catch (e) {
-      alert('Error: ' + e.message);
-    }
+    } catch (e) { alert('Error: ' + e.message); }
     setProcesando(false);
   }
 
   if (estado === 'cargando') return null;
-
-  if (estado === 'no-soportado') {
-    return (
-      <button disabled className="notif-btn-off font-medium px-4 py-2 rounded-lg opacity-50 text-sm">
-        🔕 Notificaciones no soportadas
-      </button>
-    );
-  }
-
-  if (estado === 'denegado') {
-    return (
-      <button disabled className="notif-btn-off font-medium px-4 py-2 rounded-lg opacity-50 text-sm" title="Habilítalo desde la configuración del navegador">
-        🔕 Permisos bloqueados
-      </button>
-    );
-  }
-
-  if (estado === 'suscrito') {
-    return (
-      <button onClick={desactivar} disabled={procesando}
-        className="notif-btn-on font-medium px-4 py-2 rounded-lg text-sm">
-        {procesando ? '...' : '🔔 Notificaciones activas'}
-      </button>
-    );
-  }
-
-  return (
-    <button onClick={activar} disabled={procesando}
-      className="notif-btn-off font-medium px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
-      {procesando ? 'Activando…' : '🔔 Activar notificaciones'}
-    </button>
-  );
+  if (estado === 'no-soportado') return <button disabled className="notif-btn-off font-medium px-4 py-2 rounded-lg opacity-50 text-sm">🔕 No soportado</button>;
+  if (estado === 'denegado') return <button disabled className="notif-btn-off font-medium px-4 py-2 rounded-lg opacity-50 text-sm">🔕 Permisos bloqueados</button>;
+  if (estado === 'suscrito') return <button onClick={desactivar} disabled={procesando} className="notif-btn-on font-medium px-4 py-2 rounded-lg text-sm">{procesando ? '...' : '🔔 Notificaciones activas'}</button>;
+  return <button onClick={activar} disabled={procesando} className="notif-btn-off font-medium px-4 py-2 rounded-lg text-sm hover:bg-gray-50">{procesando ? 'Activando…' : '🔔 Activar notificaciones'}</button>;
 }
 
 function VistaNotas() {
@@ -714,7 +1073,7 @@ function VistaNotas() {
   const [editando, setEditando] = useState(null);
   const [busqueda, setBusqueda] = useState('');
   const [filtro, setFiltro] = useState('Todas');
-  const [tick, setTick] = useState(0); // para refrescar cálculos de tiempo
+  const [tick, setTick] = useState(0);
 
   async function cargar() {
     setLoading(true); setError('');
@@ -727,27 +1086,26 @@ function VistaNotas() {
     setLoading(false);
   }
   useEffect(() => { cargar(); }, []);
+  useEffect(() => { const i = setInterval(() => setTick(t => t + 1), 60000); return () => clearInterval(i); }, []);
 
-  // Refresca cada minuto para que los textos "En 5 min" se actualicen
-  useEffect(() => {
-    const interval = setInterval(() => setTick(t => t + 1), 60000);
-    return () => clearInterval(interval);
-  }, []);
-
-  async function guardar(datos) {
+  async function guardar(datos, id) {
     if (editando) {
       const { error } = await supabase.from('notas_rapidas').update(datos).eq('id', editando.id);
       if (error) return alert('Error al actualizar: ' + error.message);
     } else {
-      const { error } = await supabase.from('notas_rapidas').insert([{ id: Date.now(), ...datos }]);
+      const { error } = await supabase.from('notas_rapidas').insert([{ id, ...datos }]);
       if (error) return alert('Error al guardar: ' + error.message);
     }
     setModalAbierto(false); setEditando(null); cargar();
   }
 
-  async function eliminar(id) {
-    if (!confirm('¿Eliminar esta nota?')) return;
-    const { error } = await supabase.from('notas_rapidas').delete().eq('id', id);
+  async function eliminar(nota) {
+    if (!confirm('¿Eliminar esta nota? Se borrarán también sus adjuntos.')) return;
+    if (nota.adjuntos && nota.adjuntos.length) {
+      const paths = nota.adjuntos.map(a => a.path).filter(Boolean);
+      if (paths.length) await supabase.storage.from(STORAGE_BUCKET).remove(paths);
+    }
+    const { error } = await supabase.from('notas_rapidas').delete().eq('id', nota.id);
     if (error) return alert('Error: ' + error.message);
     cargar();
   }
@@ -755,20 +1113,9 @@ function VistaNotas() {
   const notasFiltradas = useMemo(() => notas.filter(n => {
     if (busqueda && !(n.nota || '').toLowerCase().includes(busqueda.toLowerCase())) return false;
     if (filtro === 'Con recordatorio' && !n.recordatorio) return false;
-    if (filtro === 'Vencidas') {
-      if (!n.recordatorio) return false;
-      if (minutosHasta(n.recordatorio) >= 0) return false;
-    }
-    if (filtro === 'Próximas 24h') {
-      if (!n.recordatorio) return false;
-      const m = minutosHasta(n.recordatorio);
-      if (m < 0 || m > 1440) return false;
-    }
-    if (filtro === 'Esta semana') {
-      if (!n.recordatorio) return false;
-      const m = minutosHasta(n.recordatorio);
-      if (m < 0 || m > 10080) return false;
-    }
+    if (filtro === 'Vencidas') { if (!n.recordatorio) return false; if (minutosHasta(n.recordatorio) >= 0) return false; }
+    if (filtro === 'Próximas 24h') { if (!n.recordatorio) return false; const m = minutosHasta(n.recordatorio); if (m < 0 || m > 1440) return false; }
+    if (filtro === 'Esta semana') { if (!n.recordatorio) return false; const m = minutosHasta(n.recordatorio); if (m < 0 || m > 10080) return false; }
     return true;
   }), [notas, busqueda, filtro, tick]);
 
@@ -791,7 +1138,6 @@ function VistaNotas() {
           + Nueva nota
         </button>
       </div>
-
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
           <div className="text-sm text-gray-500 font-medium">Total notas</div>
@@ -810,7 +1156,6 @@ function VistaNotas() {
           <div className="text-3xl font-bold text-amber-700 mt-1">{stats.proximas}</div>
         </div>
       </div>
-
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-4 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
         <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)}
           placeholder="Buscar en notas…"
@@ -824,11 +1169,9 @@ function VistaNotas() {
           <option value="Esta semana">Esta semana</option>
         </select>
       </div>
-
       {error && <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 text-sm rounded-xl mb-4">{error}</div>}
-      {loading ? (
-        <div className="bg-white rounded-xl p-12 text-center empty-state border border-gray-100">Cargando…</div>
-      ) : notasFiltradas.length === 0 ? (
+      {loading ? <div className="bg-white rounded-xl p-12 text-center empty-state border border-gray-100">Cargando…</div>
+      : notasFiltradas.length === 0 ? (
         <div className="bg-white rounded-xl p-12 text-center empty-state border border-gray-100">
           {notas.length === 0 ? 'Aún no hay notas. Hacé clic en "Nueva nota" para comenzar.' : 'No hay notas que coincidan con los filtros.'}
         </div>
@@ -841,7 +1184,6 @@ function VistaNotas() {
           ))}
         </div>
       )}
-
       <Modal open={modalAbierto} onClose={() => { setModalAbierto(false); setEditando(null); }}
         title={editando ? 'Editar nota' : 'Nueva nota'}>
         <NotaForm initial={editando} onSubmit={guardar}
@@ -851,11 +1193,10 @@ function VistaNotas() {
   );
 }
 
-/* ===================== APP ROOT ===================== */
+/* ==================== APP ==================== */
 
 function App() {
   const [tab, setTab] = useState('bitacora');
-
   return (
     <div className="min-h-screen">
       <header className="pt-bg text-white shadow-md">
@@ -868,16 +1209,11 @@ function App() {
             </div>
           </div>
           <div className="flex border-b border-white/20">
-            <div className={`tab-btn ${tab === 'bitacora' ? 'active' : ''}`} onClick={() => setTab('bitacora')}>
-              📋 Bitácora
-            </div>
-            <div className={`tab-btn ${tab === 'notas' ? 'active' : ''}`} onClick={() => setTab('notas')}>
-              📝 Notas rápidas
-            </div>
+            <div className={`tab-btn ${tab === 'bitacora' ? 'active' : ''}`} onClick={() => setTab('bitacora')}>📋 Bitácora</div>
+            <div className={`tab-btn ${tab === 'notas' ? 'active' : ''}`} onClick={() => setTab('notas')}>📝 Notas rápidas</div>
           </div>
         </div>
       </header>
-
       <main className="max-w-6xl mx-auto px-6 py-8">
         {tab === 'bitacora' ? <VistaBitacora /> : <VistaNotas />}
         <footer className="text-center text-xs text-gray-400 mt-8">
