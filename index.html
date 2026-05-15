@@ -36,6 +36,7 @@
   .badge-pendiente { background: #fef3c7; color: #92400e; }
   .badge-encurso { background: #dbeafe; color: #1e40af; }
   .badge-completado { background: #d1fae5; color: #065f46; }
+  .badge-admin { background: #fce7f3; color: #9f1239; }
   .modal-backdrop { background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
   table tbody tr:hover { background-color: #fafafa; }
   .empty-state { color: #9ca3af; }
@@ -72,17 +73,11 @@
   .mic-btn {
     width: 36px; height: 36px;
     display: inline-flex; align-items: center; justify-content: center;
-    border-radius: 50%;
-    border: 1px solid #d1d5db;
-    background: white;
-    cursor: pointer;
+    border-radius: 50%; border: 1px solid #d1d5db; background: white; cursor: pointer;
     transition: all 0.15s;
   }
   .mic-btn:hover { background: #f9fafb; }
-  .mic-btn.recording {
-    background: #dc2626; color: white; border-color: #dc2626;
-    animation: pulse 1.5s infinite;
-  }
+  .mic-btn.recording { background: #dc2626; color: white; border-color: #dc2626; animation: pulse 1.5s infinite; }
   @keyframes pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
     50% { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
@@ -91,18 +86,15 @@
     display: inline-flex; align-items: center; gap: 0.4rem;
     background: white; border: 1px solid #e5e7eb;
     padding: 0.35rem 0.6rem; border-radius: 0.4rem;
-    font-size: 0.78rem; color: #374151;
-    max-width: 100%;
+    font-size: 0.78rem; color: #374151; max-width: 100%;
   }
-  .adjunto-chip .nombre {
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    max-width: 160px;
-  }
-  .progress-bar {
-    height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden;
-  }
-  .progress-bar > div {
-    height: 100%; background: var(--pt-green); transition: width 0.2s;
+  .adjunto-chip .nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+  .progress-bar { height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden; }
+  .progress-bar > div { height: 100%; background: var(--pt-green); transition: width 0.2s; }
+  .auth-bg {
+    background: linear-gradient(135deg, #1a4a2e 0%, #143b25 100%);
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center; padding: 1rem;
   }
 </style>
 </head>
@@ -115,9 +107,9 @@ const { useState, useEffect, useMemo, useRef } = React;
 const SUPABASE_URL = 'https://vcdgurkuoqsdvwvpnevr.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZjZGd1cmt1b3FzZHZ3dnBuZXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjYxNDQsImV4cCI6MjA4ODMwMjE0NH0._fC7LXnggqXyniyOAb2orZj-QHY1_Xrf_-FnKVju9S8';
 const VAPID_PUBLIC_KEY = 'BPocEbVPgChTKG9y8NRkohuCfMxNCKl1bmoXOnYL7Zv56q0KF6T6MFrQWoDkoVgaHODCL2LBPvZOb61-eY3aHmE';
-const NOTIF_EMAIL = 'acamposp@parquetempisque.com';
 const STORAGE_BUCKET = 'adjuntos';
 const MAX_FILE_MB = 50;
+const DOMINIO_PERMITIDO = '@parquetempisque.com';
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -142,12 +134,7 @@ function formatFecha(fechaStr) {
 function formatFechaHora(isoStr) {
   if (!isoStr) return '';
   const d = new Date(isoStr);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const min = String(d.getMinutes()).padStart(2, '0');
-  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
 function hoyISO() {
@@ -218,9 +205,7 @@ function formatTamano(bytes) {
 }
 
 function formatDuracion(segs) {
-  const m = Math.floor(segs / 60);
-  const s = segs % 60;
-  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${String(Math.floor(segs/60)).padStart(2,'0')}:${String(segs%60).padStart(2,'0')}`;
 }
 
 function tipoIcono(mimeOrName) {
@@ -235,46 +220,22 @@ function tipoIcono(mimeOrName) {
   return '📎';
 }
 
-function esImagen(adj) {
-  return (adj.tipo || '').startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(adj.nombre || '');
-}
-
-function esVideo(adj) {
-  return (adj.tipo || '').startsWith('video/') || /\.(mp4|mov|webm|avi|mkv)$/i.test(adj.nombre || '');
-}
-
-function esAudio(adj) {
-  return (adj.tipo || '').startsWith('audio/') || /\.(mp3|wav|webm|m4a|ogg)$/i.test(adj.nombre || '');
-}
-
-/* ==================== UPLOAD HELPER ==================== */
+function esImagen(adj) { return (adj.tipo || '').startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(adj.nombre || ''); }
+function esVideo(adj) { return (adj.tipo || '').startsWith('video/') || /\.(mp4|mov|webm|avi|mkv)$/i.test(adj.nombre || ''); }
+function esAudio(adj) { return (adj.tipo || '').startsWith('audio/') || /\.(mp3|wav|webm|m4a|ogg)$/i.test(adj.nombre || ''); }
 
 async function subirArchivo(file, carpeta, onProgress) {
-  if (file.size > MAX_FILE_MB * 1024 * 1024) {
-    throw new Error(`El archivo excede el límite de ${MAX_FILE_MB} MB`);
-  }
+  if (file.size > MAX_FILE_MB * 1024 * 1024) throw new Error(`Excede ${MAX_FILE_MB} MB`);
   const timestamp = Date.now();
   const nombreLimpio = file.name.replace(/[^\w.\-]/g, '_');
   const path = `${carpeta}/${timestamp}_${nombreLimpio}`;
-
-  // Simulamos progreso ya que Supabase JS v2 no expone progress en upload
   if (onProgress) onProgress(20);
-  const { data, error } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .upload(path, file, { cacheControl: '3600', upsert: false });
+  const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file, { cacheControl: '3600', upsert: false });
   if (error) throw error;
   if (onProgress) onProgress(80);
-
   const { data: pub } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
   if (onProgress) onProgress(100);
-
-  return {
-    nombre: file.name,
-    url: pub.publicUrl,
-    tipo: file.type || '',
-    tamano: file.size,
-    path
-  };
+  return { nombre: file.name, url: pub.publicUrl, tipo: file.type || '', tamano: file.size, path };
 }
 
 async function eliminarArchivo(path) {
@@ -282,7 +243,201 @@ async function eliminarArchivo(path) {
   await supabase.storage.from(STORAGE_BUCKET).remove([path]);
 }
 
-/* ==================== COMPONENTES UI ==================== */
+/* ==================== AUTH SCREEN ==================== */
+
+function PantallaAuth({ onAutenticado }) {
+  const [modo, setModo] = useState('login'); // login | signup | recuperar
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [nombre, setNombre] = useState('');
+  const [cargando, setCargando] = useState(false);
+  const [mensaje, setMensaje] = useState('');
+  const [error, setError] = useState('');
+
+  function validarDominio(em) {
+    return em.toLowerCase().endsWith(DOMINIO_PERMITIDO);
+  }
+
+  async function handleLogin(e) {
+    e?.preventDefault();
+    setError(''); setMensaje(''); setCargando(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) throw error;
+      // El listener de auth state cambia la vista
+    } catch (e) {
+      setError(e.message || 'Error al iniciar sesión');
+    }
+    setCargando(false);
+  }
+
+  async function handleSignup(e) {
+    e?.preventDefault();
+    setError(''); setMensaje('');
+    if (!validarDominio(email)) {
+      setError(`Solo se permiten correos ${DOMINIO_PERMITIDO}`);
+      return;
+    }
+    if (password.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    if (!nombre.trim()) {
+      setError('Ingresá tu nombre completo');
+      return;
+    }
+    setCargando(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { data: { nombre: nombre.trim() } }
+      });
+      if (error) throw error;
+      if (data.user && !data.session) {
+        setMensaje('Cuenta creada. Revisá tu correo para confirmar el registro.');
+      } else if (data.session) {
+        // Sesión inmediata si la confirmación de email está desactivada
+      }
+    } catch (e) {
+      setError(e.message || 'Error al registrarse');
+    }
+    setCargando(false);
+  }
+
+  async function handleRecuperar(e) {
+    e?.preventDefault();
+    setError(''); setMensaje(''); setCargando(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: window.location.href
+      });
+      if (error) throw error;
+      setMensaje('Revisá tu correo: te enviamos un enlace para restablecer la contraseña.');
+    } catch (e) {
+      setError(e.message || 'Error al solicitar recuperación');
+    }
+    setCargando(false);
+  }
+
+  return (
+    <div className="auth-bg">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
+        <div className="text-center mb-6">
+          <img src="https://vr506.com/assets/logo%20pt.png" alt="Parque Tempisque" className="h-16 w-auto mx-auto mb-3" />
+          <h1 className="text-2xl font-bold pt-text">Bitácora IT</h1>
+          <p className="text-sm text-gray-600 mt-1">Parque Tempisque</p>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-3 py-2 mb-4">
+            {error}
+          </div>
+        )}
+        {mensaje && (
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-lg px-3 py-2 mb-4">
+            {mensaje}
+          </div>
+        )}
+
+        {modo === 'login' && (
+          <form onSubmit={handleLogin} className="space-y-3">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Correo</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+                placeholder={`nombre${DOMINIO_PERMITIDO}`}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Contraseña</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
+            </div>
+            <button type="submit" disabled={cargando}
+              className="w-full pt-btn text-white font-semibold py-2.5 rounded-lg disabled:opacity-50">
+              {cargando ? 'Ingresando…' : 'Iniciar sesión'}
+            </button>
+            <div className="text-center text-sm pt-2 space-y-1">
+              <button type="button" onClick={() => { setModo('signup'); setError(''); setMensaje(''); }}
+                className="pt-text font-semibold hover:underline">
+                ¿No tenés cuenta? Registrate
+              </button>
+              <div>
+                <button type="button" onClick={() => { setModo('recuperar'); setError(''); setMensaje(''); }}
+                  className="text-gray-500 hover:underline text-xs">
+                  ¿Olvidaste tu contraseña?
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
+
+        {modo === 'signup' && (
+          <form onSubmit={handleSignup} className="space-y-3">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Nombre completo</label>
+              <input type="text" value={nombre} onChange={e => setNombre(e.target.value)} required
+                placeholder="Tu nombre y apellido"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Correo <span className="text-xs text-gray-500 font-normal">(solo {DOMINIO_PERMITIDO})</span>
+              </label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+                placeholder={`nombre${DOMINIO_PERMITIDO}`}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Contraseña <span className="text-xs text-gray-500 font-normal">(mín. 6 caracteres)</span>
+              </label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
+            </div>
+            <button type="submit" disabled={cargando}
+              className="w-full pt-btn text-white font-semibold py-2.5 rounded-lg disabled:opacity-50">
+              {cargando ? 'Creando cuenta…' : 'Crear cuenta'}
+            </button>
+            <div className="text-center text-sm pt-2">
+              <button type="button" onClick={() => { setModo('login'); setError(''); setMensaje(''); }}
+                className="pt-text font-semibold hover:underline">
+                ¿Ya tenés cuenta? Iniciá sesión
+              </button>
+            </div>
+          </form>
+        )}
+
+        {modo === 'recuperar' && (
+          <form onSubmit={handleRecuperar} className="space-y-3">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Correo</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+                placeholder={`nombre${DOMINIO_PERMITIDO}`}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
+            </div>
+            <button type="submit" disabled={cargando}
+              className="w-full pt-btn text-white font-semibold py-2.5 rounded-lg disabled:opacity-50">
+              {cargando ? 'Enviando…' : 'Enviar enlace de recuperación'}
+            </button>
+            <div className="text-center text-sm pt-2">
+              <button type="button" onClick={() => { setModo('login'); setError(''); setMensaje(''); }}
+                className="pt-text font-semibold hover:underline">
+                Volver al inicio de sesión
+              </button>
+            </div>
+          </form>
+        )}
+
+        <div className="text-center text-xs text-gray-400 mt-6 pt-4 border-t border-gray-100">
+          Solo personal autorizado · Encargado de TI: Abel Campos
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ==================== UI COMPONENTS ==================== */
 
 function Modal({ open, onClose, title, children }) {
   if (!open) return null;
@@ -299,7 +454,6 @@ function Modal({ open, onClose, title, children }) {
   );
 }
 
-/* Botón de dictado por voz */
 function BotonMicrofono({ onTranscript, disabled }) {
   const [escuchando, setEscuchando] = useState(false);
   const [soportado, setSoportado] = useState(true);
@@ -307,23 +461,15 @@ function BotonMicrofono({ onTranscript, disabled }) {
 
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { setSoportado(false); return; }
+    if (!SR) setSoportado(false);
   }, []);
 
   function toggle() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return;
-
-    if (escuchando) {
-      recognitionRef.current?.stop();
-      return;
-    }
-
+    if (escuchando) { recognitionRef.current?.stop(); return; }
     const rec = new SR();
-    rec.lang = 'es-CR';
-    rec.continuous = true;
-    rec.interimResults = false;
-
+    rec.lang = 'es-CR'; rec.continuous = true; rec.interimResults = false;
     rec.onresult = (event) => {
       let texto = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -331,31 +477,22 @@ function BotonMicrofono({ onTranscript, disabled }) {
       }
       if (texto) onTranscript(texto);
     };
-    rec.onerror = (e) => {
-      console.error('Error dictado:', e.error);
-      if (e.error === 'not-allowed') alert('Permiso de micrófono denegado');
-      setEscuchando(false);
-    };
+    rec.onerror = (e) => { if (e.error === 'not-allowed') alert('Permiso de micrófono denegado'); setEscuchando(false); };
     rec.onend = () => setEscuchando(false);
-
     recognitionRef.current = rec;
     rec.start();
     setEscuchando(true);
   }
 
   if (!soportado) return null;
-
   return (
     <button type="button" onClick={toggle} disabled={disabled}
       className={`mic-btn ${escuchando ? 'recording' : ''}`}
-      title={escuchando ? 'Detener dictado' : 'Dictar texto'}>
-      🎤
-    </button>
+      title={escuchando ? 'Detener dictado' : 'Dictar texto'}>🎤</button>
   );
 }
 
-/* Grabador de audio (memo de voz) */
-function GrabadorAudio({ onAudioListo, disabled }) {
+function GrabadorAudio({ onAudioListo }) {
   const [grabando, setGrabando] = useState(false);
   const [duracion, setDuracion] = useState(0);
   const [audioBlob, setAudioBlob] = useState(null);
@@ -365,9 +502,7 @@ function GrabadorAudio({ onAudioListo, disabled }) {
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
 
-  useEffect(() => {
-    if (!navigator.mediaDevices || !window.MediaRecorder) setSoportado(false);
-  }, []);
+  useEffect(() => { if (!navigator.mediaDevices || !window.MediaRecorder) setSoportado(false); }, []);
 
   async function iniciar() {
     try {
@@ -383,33 +518,23 @@ function GrabadorAudio({ onAudioListo, disabled }) {
       };
       mr.start();
       mediaRecorderRef.current = mr;
-      setGrabando(true);
-      setDuracion(0);
+      setGrabando(true); setDuracion(0);
       timerRef.current = setInterval(() => setDuracion(d => d + 1), 1000);
-    } catch (e) {
-      alert('No se pudo acceder al micrófono: ' + e.message);
-    }
+    } catch (e) { alert('No se pudo acceder al micrófono: ' + e.message); }
   }
 
-  function detener() {
-    mediaRecorderRef.current?.stop();
-    clearInterval(timerRef.current);
-    setGrabando(false);
-  }
+  function detener() { mediaRecorderRef.current?.stop(); clearInterval(timerRef.current); setGrabando(false); }
 
   function adjuntar() {
     if (!audioBlob) return;
-    const nombre = `memo-voz-${Date.now()}.webm`;
-    const file = new File([audioBlob], nombre, { type: 'audio/webm' });
+    const file = new File([audioBlob], `memo-voz-${Date.now()}.webm`, { type: 'audio/webm' });
     onAudioListo(file);
     descartar();
   }
 
   function descartar() {
     if (audioURL) URL.revokeObjectURL(audioURL);
-    setAudioBlob(null);
-    setAudioURL('');
-    setDuracion(0);
+    setAudioBlob(null); setAudioURL(''); setDuracion(0);
   }
 
   if (!soportado) return null;
@@ -420,33 +545,23 @@ function GrabadorAudio({ onAudioListo, disabled }) {
         <div className="text-xs font-semibold text-gray-600">Audio grabado · {formatDuracion(duracion)}</div>
         <audio controls src={audioURL} className="w-full h-10"></audio>
         <div className="flex gap-2">
-          <button type="button" onClick={adjuntar}
-            className="flex-1 pt-btn text-white text-sm font-semibold py-2 rounded-lg">Adjuntar</button>
-          <button type="button" onClick={descartar}
-            className="px-4 border border-gray-300 text-gray-700 text-sm font-semibold py-2 rounded-lg hover:bg-gray-50">Descartar</button>
+          <button type="button" onClick={adjuntar} className="flex-1 pt-btn text-white text-sm font-semibold py-2 rounded-lg">Adjuntar</button>
+          <button type="button" onClick={descartar} className="px-4 border border-gray-300 text-gray-700 text-sm font-semibold py-2 rounded-lg hover:bg-gray-50">Descartar</button>
         </div>
       </div>
     );
   }
 
   return (
-    <button type="button" onClick={grabando ? detener : iniciar} disabled={disabled}
+    <button type="button" onClick={grabando ? detener : iniciar}
       className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold border ${grabando ? 'bg-red-50 text-red-700 border-red-300' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>
-      {grabando ? (
-        <>
-          <span className="inline-block w-2 h-2 bg-red-600 rounded-full animate-pulse"></span>
-          Detener · {formatDuracion(duracion)}
-        </>
-      ) : (
-        <>🎙️ Grabar memo de voz</>
-      )}
+      {grabando ? <><span className="inline-block w-2 h-2 bg-red-600 rounded-full animate-pulse"></span>Detener · {formatDuracion(duracion)}</> : <>🎙️ Grabar memo de voz</>}
     </button>
   );
 }
 
-/* Gestor de adjuntos en el form */
 function GestorAdjuntos({ adjuntos, setAdjuntos, carpeta }) {
-  const [subiendo, setSubiendo] = useState({}); // {nombre: porcentaje}
+  const [subiendo, setSubiendo] = useState({});
   const fileInputRef = useRef(null);
 
   async function manejarArchivos(files) {
@@ -454,16 +569,12 @@ function GestorAdjuntos({ adjuntos, setAdjuntos, carpeta }) {
       const id = `${file.name}-${Date.now()}`;
       setSubiendo(s => ({ ...s, [id]: 0 }));
       try {
-        const adj = await subirArchivo(file, carpeta, (p) => {
-          setSubiendo(s => ({ ...s, [id]: p }));
-        });
+        const adj = await subirArchivo(file, carpeta, (p) => setSubiendo(s => ({ ...s, [id]: p })));
         setAdjuntos(prev => [...prev, adj]);
       } catch (e) {
         alert(`Error al subir "${file.name}": ${e.message}`);
       } finally {
-        setSubiendo(s => {
-          const c = { ...s }; delete c[id]; return c;
-        });
+        setSubiendo(s => { const c = { ...s }; delete c[id]; return c; });
       }
     }
   }
@@ -471,9 +582,7 @@ function GestorAdjuntos({ adjuntos, setAdjuntos, carpeta }) {
   async function quitar(idx) {
     const adj = adjuntos[idx];
     if (!confirm(`¿Quitar "${adj.nombre}"?`)) return;
-    try {
-      await eliminarArchivo(adj.path);
-    } catch (e) { /* ignorar */ }
+    try { await eliminarArchivo(adj.path); } catch (e) { /* ignorar */ }
     setAdjuntos(prev => prev.filter((_, i) => i !== idx));
   }
 
@@ -486,16 +595,13 @@ function GestorAdjuntos({ adjuntos, setAdjuntos, carpeta }) {
         className="w-full py-2 rounded-lg text-sm font-semibold bg-white text-gray-700 border border-gray-300 hover:bg-gray-50">
         📎 Adjuntar archivo
       </button>
-
       <GrabadorAudio onAudioListo={(file) => manejarArchivos([file])} />
-
       {Object.entries(subiendo).map(([id, pct]) => (
         <div key={id} className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs">
           <div className="text-blue-800 mb-1">Subiendo… {pct}%</div>
           <div className="progress-bar"><div style={{ width: pct + '%' }}></div></div>
         </div>
       ))}
-
       {adjuntos.length > 0 && (
         <div className="space-y-2 mt-2">
           {adjuntos.map((adj, idx) => (
@@ -503,15 +609,11 @@ function GestorAdjuntos({ adjuntos, setAdjuntos, carpeta }) {
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <span className="text-lg">{tipoIcono(adj.tipo || adj.nombre)}</span>
                 <div className="min-w-0 flex-1">
-                  <a href={adj.url} target="_blank" rel="noopener"
-                    className="text-sm font-medium text-gray-800 hover:underline block truncate">
-                    {adj.nombre}
-                  </a>
+                  <a href={adj.url} target="_blank" rel="noopener" className="text-sm font-medium text-gray-800 hover:underline block truncate">{adj.nombre}</a>
                   <div className="text-xs text-gray-500">{formatTamano(adj.tamano)}</div>
                 </div>
               </div>
-              <button type="button" onClick={() => quitar(idx)}
-                className="text-red-600 hover:text-red-800 text-sm font-semibold px-2">✕</button>
+              <button type="button" onClick={() => quitar(idx)} className="text-red-600 hover:text-red-800 text-sm font-semibold px-2">✕</button>
             </div>
           ))}
         </div>
@@ -520,30 +622,23 @@ function GestorAdjuntos({ adjuntos, setAdjuntos, carpeta }) {
   );
 }
 
-/* Visualización de adjuntos en tarjetas/tablas */
 function VistaAdjuntos({ adjuntos, compacto = false }) {
   if (!adjuntos || adjuntos.length === 0) return null;
-
   const imagenes = adjuntos.filter(esImagen);
   const otros = adjuntos.filter(a => !esImagen(a));
-
   if (compacto) {
     return (
       <div className="flex flex-wrap gap-1 mt-2">
         {imagenes.slice(0, 3).map((adj, i) => (
-          <a key={i} href={adj.url} target="_blank" rel="noopener" className="block">
-            <img src={adj.url} alt={adj.nombre}
-              className="w-12 h-12 object-cover rounded border border-gray-300" />
+          <a key={i} href={adj.url} target="_blank" rel="noopener">
+            <img src={adj.url} alt={adj.nombre} className="w-12 h-12 object-cover rounded border border-gray-300" />
           </a>
         ))}
         {imagenes.length > 3 && (
-          <div className="w-12 h-12 rounded border border-gray-300 bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600">
-            +{imagenes.length - 3}
-          </div>
+          <div className="w-12 h-12 rounded border border-gray-300 bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600">+{imagenes.length - 3}</div>
         )}
         {otros.map((adj, i) => (
-          <a key={'o'+i} href={adj.url} target="_blank" rel="noopener"
-            className="adjunto-chip" title={adj.nombre}>
+          <a key={'o'+i} href={adj.url} target="_blank" rel="noopener" className="adjunto-chip" title={adj.nombre}>
             <span>{tipoIcono(adj.tipo || adj.nombre)}</span>
             <span className="nombre">{adj.nombre}</span>
           </a>
@@ -551,15 +646,13 @@ function VistaAdjuntos({ adjuntos, compacto = false }) {
       </div>
     );
   }
-
   return (
     <div className="mt-2 space-y-2">
       {imagenes.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
           {imagenes.map((adj, i) => (
             <a key={i} href={adj.url} target="_blank" rel="noopener">
-              <img src={adj.url} alt={adj.nombre}
-                className="w-full h-20 object-cover rounded border border-gray-300 hover:opacity-80" />
+              <img src={adj.url} alt={adj.nombre} className="w-full h-20 object-cover rounded border border-gray-300 hover:opacity-80" />
             </a>
           ))}
         </div>
@@ -577,8 +670,7 @@ function VistaAdjuntos({ adjuntos, compacto = false }) {
               <video controls src={adj.url} className="w-full max-h-48 rounded"></video>
             </div>
           ) : (
-            <a href={adj.url} target="_blank" rel="noopener"
-              className="adjunto-chip block w-full">
+            <a href={adj.url} target="_blank" rel="noopener" className="adjunto-chip block w-full">
               <span>{tipoIcono(adj.tipo || adj.nombre)}</span>
               <span className="nombre flex-1">{adj.nombre}</span>
               <span className="text-gray-500 text-xs">{formatTamano(adj.tamano)}</span>
@@ -592,7 +684,7 @@ function VistaAdjuntos({ adjuntos, compacto = false }) {
 
 /* ==================== BITÁCORA ==================== */
 
-function EntradaForm({ initial, onSubmit, onCancel }) {
+function EntradaForm({ initial, onSubmit, onCancel, userId }) {
   const [fecha, setFecha] = useState(initial?.fecha || hoyISO());
   const [titulo, setTitulo] = useState(initial?.titulo || '');
   const [descripcion, setDescripcion] = useState(initial?.descripcion || '');
@@ -605,72 +697,49 @@ function EntradaForm({ initial, onSubmit, onCancel }) {
     if (!titulo.trim()) return alert('El título es obligatorio');
     if (!fecha) return alert('La fecha es obligatoria');
     setSaving(true);
-    await onSubmit({
-      fecha, titulo: titulo.trim(), descripcion: descripcion.trim(),
-      estado, adjuntos
-    }, idEntrada);
+    await onSubmit({ fecha, titulo: titulo.trim(), descripcion: descripcion.trim(), estado, adjuntos }, idEntrada);
     setSaving(false);
-  }
-
-  function agregarDictadoDescripcion(texto) {
-    setDescripcion(prev => prev ? prev + ' ' + texto : texto);
-  }
-
-  function agregarDictadoTitulo(texto) {
-    setTitulo(prev => prev ? prev + ' ' + texto : texto);
   }
 
   return (
     <div className="space-y-4">
       <div>
         <label className="block text-sm font-semibold text-gray-700 mb-1">Fecha</label>
-        <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
+        <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
       </div>
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="text-sm font-semibold text-gray-700">Título</label>
-          <BotonMicrofono onTranscript={agregarDictadoTitulo} />
+          <BotonMicrofono onTranscript={(t) => setTitulo(prev => prev ? prev + ' ' + t : t)} />
         </div>
-        <input type="text" value={titulo} onChange={e => setTitulo(e.target.value)}
-          placeholder="Ej: Migración WAN edificio centro (también podés dictar 🎤)"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
+        <input type="text" value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Ej: Migración WAN edificio centro (también podés dictar 🎤)" className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
       </div>
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="text-sm font-semibold text-gray-700">Descripción</label>
-          <BotonMicrofono onTranscript={agregarDictadoDescripcion} />
+          <BotonMicrofono onTranscript={(t) => setDescripcion(prev => prev ? prev + ' ' + t : t)} />
         </div>
-        <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)}
-          rows="4" placeholder="Detalle del trabajo realizado… (también podés dictar 🎤)"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700 resize-none" />
+        <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows="4" placeholder="Detalle del trabajo realizado… (también podés dictar 🎤)" className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700 resize-none" />
       </div>
       <div>
         <label className="block text-sm font-semibold text-gray-700 mb-1">Estado</label>
-        <select value={estado} onChange={e => setEstado(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700 bg-white">
+        <select value={estado} onChange={e => setEstado(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700 bg-white">
           {ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
         </select>
       </div>
       <div>
         <label className="block text-sm font-semibold text-gray-700 mb-2">Adjuntos</label>
-        <GestorAdjuntos adjuntos={adjuntos} setAdjuntos={setAdjuntos} carpeta={`bitacora/${idEntrada}`} />
+        <GestorAdjuntos adjuntos={adjuntos} setAdjuntos={setAdjuntos} carpeta={`${userId}/bitacora/${idEntrada}`} />
       </div>
       <div className="flex gap-3 pt-2">
-        <button onClick={handleSubmit} disabled={saving}
-          className="flex-1 pt-btn text-white font-semibold py-2.5 rounded-lg disabled:opacity-50">
-          {saving ? 'Guardando…' : 'Guardar'}
-        </button>
-        <button onClick={onCancel} disabled={saving}
-          className="px-6 border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-50">
-          Cancelar
-        </button>
+        <button onClick={handleSubmit} disabled={saving} className="flex-1 pt-btn text-white font-semibold py-2.5 rounded-lg disabled:opacity-50">{saving ? 'Guardando…' : 'Guardar'}</button>
+        <button onClick={onCancel} disabled={saving} className="px-6 border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-50">Cancelar</button>
       </div>
     </div>
   );
 }
 
-function VistaBitacora() {
+function VistaBitacora({ session, perfil, vistaAdmin }) {
   const [entradas, setEntradas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -679,25 +748,39 @@ function VistaBitacora() {
   const [filtroEstado, setFiltroEstado] = useState('Todos');
   const [busqueda, setBusqueda] = useState('');
   const [verAdjuntos, setVerAdjuntos] = useState(null);
+  const [filtroUsuario, setFiltroUsuario] = useState('Todos');
+  const [usuariosMap, setUsuariosMap] = useState({});
+
+  const esAdmin = perfil?.rol === 'admin';
 
   async function cargar() {
     setLoading(true); setError('');
-    const { data, error } = await supabase
-      .from('bitacora_it').select('*')
+    let query = supabase.from('bitacora_it').select('*')
       .order('fecha', { ascending: false })
       .order('created_at', { ascending: false });
+    if (!vistaAdmin) query = query.eq('user_id', session.user.id);
+
+    const { data, error } = await query;
     if (error) { setError('Error al cargar: ' + error.message); setEntradas([]); }
     else setEntradas(data || []);
+
+    if (vistaAdmin) {
+      const { data: profiles } = await supabase.from('bitacora_profiles').select('id, nombre, email');
+      const map = {};
+      (profiles || []).forEach(p => { map[p.id] = p; });
+      setUsuariosMap(map);
+    }
     setLoading(false);
   }
-  useEffect(() => { cargar(); }, []);
+
+  useEffect(() => { cargar(); }, [vistaAdmin]);
 
   async function guardar(datos, id) {
     if (editando) {
       const { error } = await supabase.from('bitacora_it').update(datos).eq('id', editando.id);
       if (error) return alert('Error al actualizar: ' + error.message);
     } else {
-      const { error } = await supabase.from('bitacora_it').insert([{ id, ...datos }]);
+      const { error } = await supabase.from('bitacora_it').insert([{ id, user_id: session.user.id, ...datos }]);
       if (error) return alert('Error al guardar: ' + error.message);
     }
     setModalAbierto(false); setEditando(null); cargar();
@@ -705,7 +788,6 @@ function VistaBitacora() {
 
   async function eliminar(entrada) {
     if (!confirm('¿Eliminar esta entrada? Se borrarán también sus adjuntos.')) return;
-    // Borrar adjuntos del storage
     if (entrada.adjuntos && entrada.adjuntos.length) {
       const paths = entrada.adjuntos.map(a => a.path).filter(Boolean);
       if (paths.length) await supabase.storage.from(STORAGE_BUCKET).remove(paths);
@@ -717,35 +799,39 @@ function VistaBitacora() {
 
   const entradasFiltradas = useMemo(() => entradas.filter(e => {
     if (filtroEstado !== 'Todos' && e.estado !== filtroEstado) return false;
+    if (vistaAdmin && filtroUsuario !== 'Todos' && e.user_id !== filtroUsuario) return false;
     if (busqueda) {
       const q = busqueda.toLowerCase();
       if (!((e.titulo || '').toLowerCase().includes(q) || (e.descripcion || '').toLowerCase().includes(q))) return false;
     }
     return true;
-  }), [entradas, filtroEstado, busqueda]);
+  }), [entradas, filtroEstado, busqueda, filtroUsuario, vistaAdmin]);
 
   const stats = useMemo(() => ({
-    total: entradas.length,
-    pendiente: entradas.filter(e => e.estado === 'Pendiente').length,
-    encurso: entradas.filter(e => e.estado === 'En curso').length,
-    completado: entradas.filter(e => e.estado === 'Completado').length,
-  }), [entradas]);
+    total: entradasFiltradas.length,
+    pendiente: entradasFiltradas.filter(e => e.estado === 'Pendiente').length,
+    encurso: entradasFiltradas.filter(e => e.estado === 'En curso').length,
+    completado: entradasFiltradas.filter(e => e.estado === 'Completado').length,
+  }), [entradasFiltradas]);
 
   function exportarCSV() {
     if (!entradasFiltradas.length) return alert('No hay entradas para exportar');
-    const headers = ['Fecha', 'Título', 'Descripción', 'Estado', 'Adjuntos'];
-    const rows = entradasFiltradas.map(e => [
-      e.fecha,
-      `"${(e.titulo || '').replace(/"/g, '""')}"`,
-      `"${(e.descripcion || '').replace(/"/g, '""')}"`,
-      e.estado,
-      (e.adjuntos || []).length
-    ]);
+    const headers = vistaAdmin ? ['Usuario', 'Fecha', 'Título', 'Descripción', 'Estado', 'Adjuntos'] : ['Fecha', 'Título', 'Descripción', 'Estado', 'Adjuntos'];
+    const rows = entradasFiltradas.map(e => {
+      const fila = [
+        e.fecha,
+        `"${(e.titulo || '').replace(/"/g, '""')}"`,
+        `"${(e.descripcion || '').replace(/"/g, '""')}"`,
+        e.estado,
+        (e.adjuntos || []).length
+      ];
+      if (vistaAdmin) fila.unshift(usuariosMap[e.user_id]?.nombre || e.user_id);
+      return fila;
+    });
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `bitacora-it-${hoyISO()}.csv`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `bitacora-it-${hoyISO()}.csv`; a.click();
     URL.revokeObjectURL(url);
   }
 
@@ -760,25 +846,28 @@ function VistaBitacora() {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
     doc.text('Bitácora IT — Parque Tempisque', 14, 13);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-    doc.text('Encargado de Tecnologías de Información', 14, 20);
+    doc.text(vistaAdmin ? 'Vista administrador (todos los usuarios)' : `Usuario: ${perfil?.nombre || session.user.email}`, 14, 20);
     doc.setTextColor(80, 80, 80); doc.setFontSize(9);
     const ahora = new Date();
-    const fechaGen = ahora.toLocaleDateString('es-CR') + ' ' + ahora.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' });
-    doc.text(`Generado: ${fechaGen}`, 14, 36);
-    const filtros = [];
-    if (filtroEstado !== 'Todos') filtros.push(`Estado: ${filtroEstado}`);
-    if (busqueda) filtros.push(`Búsqueda: "${busqueda}"`);
-    if (filtros.length) doc.text(`Filtros: ${filtros.join(' · ')}`, 14, 41);
-    doc.text(`Total de entradas: ${entradasFiltradas.length}`, 14, filtros.length ? 46 : 41);
-    const startY = filtros.length ? 52 : 47;
+    doc.text(`Generado: ${ahora.toLocaleDateString('es-CR')} ${ahora.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}`, 14, 36);
+    doc.text(`Total: ${entradasFiltradas.length} entradas`, 14, 41);
+
+    const head = vistaAdmin ? [['Usuario', 'Fecha', 'Título', 'Descripción', 'Estado']] : [['Fecha', 'Título', 'Descripción', 'Estado']];
+    const body = entradasFiltradas.map(e => {
+      const fila = [formatFecha(e.fecha), e.titulo || '', e.descripcion || '', e.estado];
+      if (vistaAdmin) fila.unshift(usuariosMap[e.user_id]?.nombre || '—');
+      return fila;
+    });
+    const colStyles = vistaAdmin
+      ? { 0: { cellWidth: 32 }, 1: { cellWidth: 22 }, 2: { cellWidth: 40, fontStyle: 'bold' }, 3: { cellWidth: 'auto' }, 4: { cellWidth: 22 } }
+      : { 0: { cellWidth: 22 }, 1: { cellWidth: 45, fontStyle: 'bold' }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 25 } };
+
     doc.autoTable({
-      startY,
-      head: [['Fecha', 'Título', 'Descripción', 'Estado', 'Adj.']],
-      body: entradasFiltradas.map(e => [formatFecha(e.fecha), e.titulo || '', e.descripcion || '', e.estado, (e.adjuntos || []).length]),
+      startY: 47, head, body,
       styles: { fontSize: 9, cellPadding: 2.5, valign: 'top' },
       headStyles: { fillColor: [26, 74, 46], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 250, 249] },
-      columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 42, fontStyle: 'bold' }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 23 }, 4: { cellWidth: 12, halign: 'center' } },
+      columnStyles: colStyles,
       margin: { left: 14, right: 14 },
       didDrawPage: (data) => {
         const pageCount = doc.internal.getNumberOfPages();
@@ -790,14 +879,28 @@ function VistaBitacora() {
     doc.save(`bitacora-it-${hoyISO()}.pdf`);
   }
 
+  const usuariosUnicos = useMemo(() => {
+    if (!vistaAdmin) return [];
+    return Array.from(new Set(entradas.map(e => e.user_id))).map(uid => usuariosMap[uid]).filter(Boolean);
+  }, [entradas, usuariosMap, vistaAdmin]);
+
   return (
     <div>
-      <div className="flex justify-end mb-4">
-        <button onClick={() => { setEditando(null); setModalAbierto(true); }}
-          className="pt-btn text-white font-semibold px-5 py-2.5 rounded-lg shadow-sm">
-          + Nueva entrada
-        </button>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
+        {vistaAdmin && (
+          <div className="bg-pink-50 border border-pink-200 text-pink-900 text-sm font-semibold px-3 py-1.5 rounded-lg">
+            🔍 Vista administrador
+          </div>
+        )}
+        <div className="flex-1"></div>
+        {!vistaAdmin && (
+          <button onClick={() => { setEditando(null); setModalAbierto(true); }}
+            className="pt-btn text-white font-semibold px-5 py-2.5 rounded-lg shadow-sm">
+            + Nueva entrada
+          </button>
+        )}
       </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
           <div className="text-sm text-gray-500 font-medium">Total</div>
@@ -816,6 +919,7 @@ function VistaBitacora() {
           <div className="text-3xl font-bold text-emerald-700 mt-1">{stats.completado}</div>
         </div>
       </div>
+
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-4 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
         <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)}
           placeholder="Buscar por título o descripción…"
@@ -825,25 +929,30 @@ function VistaBitacora() {
           <option value="Todos">Todos los estados</option>
           {ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
         </select>
-        <button onClick={exportarCSV} className="border border-gray-300 text-gray-700 font-medium px-4 py-2 rounded-lg hover:bg-gray-50">
-          Exportar CSV
-        </button>
-        <button onClick={exportarPDF} className="pt-btn text-white font-medium px-4 py-2 rounded-lg">
-          Exportar PDF
-        </button>
+        {vistaAdmin && (
+          <select value={filtroUsuario} onChange={e => setFiltroUsuario(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-green-700">
+            <option value="Todos">Todos los usuarios</option>
+            {usuariosUnicos.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+          </select>
+        )}
+        <button onClick={exportarCSV} className="border border-gray-300 text-gray-700 font-medium px-4 py-2 rounded-lg hover:bg-gray-50">Exportar CSV</button>
+        <button onClick={exportarPDF} className="pt-btn text-white font-medium px-4 py-2 rounded-lg">Exportar PDF</button>
       </div>
+
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {error && <div className="bg-red-50 border-b border-red-200 text-red-800 px-4 py-3 text-sm">{error}</div>}
         {loading ? <div className="p-12 text-center empty-state">Cargando…</div>
         : entradasFiltradas.length === 0 ? (
           <div className="p-12 text-center empty-state">
-            {entradas.length === 0 ? 'Aún no hay entradas. Hacé clic en "Nueva entrada" para comenzar.' : 'No hay entradas que coincidan con los filtros.'}
+            {entradas.length === 0 ? (vistaAdmin ? 'Aún no hay entradas en el sistema.' : 'Aún no hay entradas. Hacé clic en "Nueva entrada" para comenzar.') : 'No hay entradas que coincidan con los filtros.'}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="pt-bg-light border-b border-gray-200">
                 <tr>
+                  {vistaAdmin && <th className="text-left px-4 py-3 text-xs font-bold pt-text uppercase tracking-wider w-32">Usuario</th>}
                   <th className="text-left px-4 py-3 text-xs font-bold pt-text uppercase tracking-wider w-28">Fecha</th>
                   <th className="text-left px-4 py-3 text-xs font-bold pt-text uppercase tracking-wider">Título / Descripción</th>
                   <th className="text-left px-4 py-3 text-xs font-bold pt-text uppercase tracking-wider w-32">Estado</th>
@@ -853,13 +962,18 @@ function VistaBitacora() {
               <tbody className="divide-y divide-gray-100">
                 {entradasFiltradas.map(e => (
                   <tr key={e.id}>
+                    {vistaAdmin && (
+                      <td className="px-4 py-3 text-sm text-gray-700 align-top">
+                        <div className="font-semibold">{usuariosMap[e.user_id]?.nombre || '—'}</div>
+                        <div className="text-xs text-gray-500">{usuariosMap[e.user_id]?.email}</div>
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-sm text-gray-700 font-medium align-top whitespace-nowrap">{formatFecha(e.fecha)}</td>
                     <td className="px-4 py-3 align-top">
                       <div className="font-semibold text-gray-900">{e.titulo}</div>
                       {e.descripcion && <div className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{e.descripcion}</div>}
                       {e.adjuntos && e.adjuntos.length > 0 && (
-                        <button onClick={() => setVerAdjuntos(e)}
-                          className="text-xs pt-text font-semibold mt-2 hover:underline">
+                        <button onClick={() => setVerAdjuntos(e)} className="text-xs pt-text font-semibold mt-2 hover:underline">
                           📎 {e.adjuntos.length} adjunto{e.adjuntos.length !== 1 ? 's' : ''}
                         </button>
                       )}
@@ -868,8 +982,12 @@ function VistaBitacora() {
                       <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${getBadgeClass(e.estado)}`}>{e.estado}</span>
                     </td>
                     <td className="px-4 py-3 align-top text-right whitespace-nowrap">
-                      <button onClick={() => { setEditando(e); setModalAbierto(true); }} className="text-sm pt-text font-semibold hover:underline mr-3">Editar</button>
-                      <button onClick={() => eliminar(e)} className="text-sm text-red-600 font-semibold hover:underline">Eliminar</button>
+                      {(e.user_id === session.user.id || esAdmin) && (
+                        <>
+                          <button onClick={() => { setEditando(e); setModalAbierto(true); }} className="text-sm pt-text font-semibold hover:underline mr-3">Editar</button>
+                          <button onClick={() => eliminar(e)} className="text-sm text-red-600 font-semibold hover:underline">Eliminar</button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -878,9 +996,10 @@ function VistaBitacora() {
           </div>
         )}
       </div>
+
       <Modal open={modalAbierto} onClose={() => { setModalAbierto(false); setEditando(null); }}
         title={editando ? 'Editar entrada' : 'Nueva entrada'}>
-        <EntradaForm initial={editando} onSubmit={guardar}
+        <EntradaForm initial={editando} onSubmit={guardar} userId={session.user.id}
           onCancel={() => { setModalAbierto(false); setEditando(null); }} />
       </Modal>
       <Modal open={!!verAdjuntos} onClose={() => setVerAdjuntos(null)}
@@ -893,7 +1012,7 @@ function VistaBitacora() {
 
 /* ==================== NOTAS RÁPIDAS ==================== */
 
-function NotaForm({ initial, onSubmit, onCancel }) {
+function NotaForm({ initial, onSubmit, onCancel, userId }) {
   const [fecha, setFecha] = useState(initial?.fecha || hoyISO());
   const [nota, setNota] = useState(initial?.nota || '');
   const [recordatorio, setRecordatorio] = useState(initial?.recordatorio ? isoADatetimeLocal(initial.recordatorio) : '');
@@ -913,21 +1032,16 @@ function NotaForm({ initial, onSubmit, onCancel }) {
     setSaving(false);
   }
 
-  function agregarDictado(texto) {
-    setNota(prev => prev ? prev + ' ' + texto : texto);
-  }
-
   return (
     <div className="space-y-4">
       <div>
         <label className="block text-sm font-semibold text-gray-700 mb-1">Fecha de la nota</label>
-        <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
+        <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
       </div>
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="text-sm font-semibold text-gray-700">Nota</label>
-          <BotonMicrofono onTranscript={agregarDictado} />
+          <BotonMicrofono onTranscript={(t) => setNota(prev => prev ? prev + ' ' + t : t)} />
         </div>
         <textarea value={nota} onChange={e => setNota(e.target.value)} rows="5"
           placeholder="Escribí la nota rápida… (también podés dictar 🎤)"
@@ -941,54 +1055,49 @@ function NotaForm({ initial, onSubmit, onCancel }) {
           <input type="datetime-local" value={recordatorio} onChange={e => setRecordatorio(e.target.value)}
             className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
           {recordatorio && (
-            <button onClick={() => setRecordatorio('')} type="button"
-              className="px-3 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 text-sm">
-              Quitar
-            </button>
+            <button onClick={() => setRecordatorio('')} type="button" className="px-3 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 text-sm">Quitar</button>
           )}
         </div>
       </div>
       <div>
         <label className="block text-sm font-semibold text-gray-700 mb-2">Adjuntos</label>
-        <GestorAdjuntos adjuntos={adjuntos} setAdjuntos={setAdjuntos} carpeta={`notas/${idNota}`} />
+        <GestorAdjuntos adjuntos={adjuntos} setAdjuntos={setAdjuntos} carpeta={`${userId}/notas/${idNota}`} />
       </div>
       <div className="flex gap-3 pt-2">
-        <button onClick={handleSubmit} disabled={saving}
-          className="flex-1 pt-btn text-white font-semibold py-2.5 rounded-lg disabled:opacity-50">
-          {saving ? 'Guardando…' : 'Guardar'}
-        </button>
-        <button onClick={onCancel} disabled={saving}
-          className="px-6 border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-50">
-          Cancelar
-        </button>
+        <button onClick={handleSubmit} disabled={saving} className="flex-1 pt-btn text-white font-semibold py-2.5 rounded-lg disabled:opacity-50">{saving ? 'Guardando…' : 'Guardar'}</button>
+        <button onClick={onCancel} disabled={saving} className="px-6 border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-50">Cancelar</button>
       </div>
     </div>
   );
 }
 
-function PostItCard({ nota, onEdit, onDelete }) {
+function PostItCard({ nota, onEdit, onDelete, usuariosMap, mostrarUsuario }) {
   const cat = categoriaRecordatorio(nota.recordatorio);
   let recordatorioClase = '';
   let recordatorioColor = 'text-gray-600';
   if (cat === 'vencido') { recordatorioClase = 'recordatorio-vencido'; recordatorioColor = 'text-red-700'; }
   else if (cat === 'proximo') { recordatorioClase = 'recordatorio-proximo'; recordatorioColor = 'text-amber-700'; }
-
   const colorBase = recordatorioClase || pickColor(nota.id);
   const textoTiempo = nota.recordatorio ? describirTiempo(nota.recordatorio) : '';
 
   return (
     <div className={`postit ${colorBase}`}>
       <div className="flex justify-between items-start mb-2">
-        <div className="text-xs font-semibold text-gray-600">{formatFecha(nota.fecha)}</div>
-        <div className="flex gap-2">
-          <button onClick={() => onEdit(nota)} title="Editar" className="text-gray-500 hover:text-gray-800 text-sm">✎</button>
-          <button onClick={() => onDelete(nota)} title="Eliminar" className="text-gray-500 hover:text-red-600 text-sm">✕</button>
+        <div>
+          <div className="text-xs font-semibold text-gray-600">{formatFecha(nota.fecha)}</div>
+          {mostrarUsuario && usuariosMap?.[nota.user_id] && (
+            <div className="text-[10px] text-gray-500 font-semibold mt-0.5">👤 {usuariosMap[nota.user_id].nombre}</div>
+          )}
         </div>
+        {onEdit && (
+          <div className="flex gap-2">
+            <button onClick={() => onEdit(nota)} title="Editar" className="text-gray-500 hover:text-gray-800 text-sm">✎</button>
+            <button onClick={() => onDelete(nota)} title="Eliminar" className="text-gray-500 hover:text-red-600 text-sm">✕</button>
+          </div>
+        )}
       </div>
       <div className="flex-1 text-gray-800 text-sm whitespace-pre-wrap break-words">{nota.nota}</div>
-      {nota.adjuntos && nota.adjuntos.length > 0 && (
-        <VistaAdjuntos adjuntos={nota.adjuntos} compacto />
-      )}
+      {nota.adjuntos && nota.adjuntos.length > 0 && <VistaAdjuntos adjuntos={nota.adjuntos} compacto />}
       {nota.recordatorio && (
         <div className="mt-3 pt-2 border-t border-black/10">
           <div className="flex items-start gap-1.5">
@@ -1004,7 +1113,7 @@ function PostItCard({ nota, onEdit, onDelete }) {
   );
 }
 
-function BotonNotificaciones() {
+function BotonNotificaciones({ userId }) {
   const [estado, setEstado] = useState('cargando');
   const [procesando, setProcesando] = useState(false);
 
@@ -1027,20 +1136,11 @@ function BotonNotificaciones() {
       const reg = await navigator.serviceWorker.register('./sw.js');
       await navigator.serviceWorker.ready;
       const permiso = await Notification.requestPermission();
-      if (permiso !== 'granted') {
-        setEstado(permiso === 'denied' ? 'denegado' : 'no-suscrito');
-        setProcesando(false); return;
-      }
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-      });
+      if (permiso !== 'granted') { setEstado(permiso === 'denied' ? 'denegado' : 'no-suscrito'); setProcesando(false); return; }
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) });
       const subJSON = sub.toJSON();
       const { error } = await supabase.from('push_subscriptions').upsert({
-        id: Date.now(),
-        endpoint: subJSON.endpoint,
-        keys: subJSON.keys,
-        user_agent: navigator.userAgent
+        id: Date.now(), user_id: userId, endpoint: subJSON.endpoint, keys: subJSON.keys, user_agent: navigator.userAgent
       }, { onConflict: 'endpoint' });
       if (error) { alert('Error guardando suscripción: ' + error.message); setProcesando(false); return; }
       setEstado('suscrito');
@@ -1055,10 +1155,7 @@ function BotonNotificaciones() {
       const reg = await navigator.serviceWorker.getRegistration();
       if (reg) {
         const sub = await reg.pushManager.getSubscription();
-        if (sub) {
-          await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
-          await sub.unsubscribe();
-        }
+        if (sub) { await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe(); }
       }
       setEstado('no-suscrito');
     } catch (e) { alert('Error: ' + e.message); }
@@ -1072,7 +1169,7 @@ function BotonNotificaciones() {
   return <button onClick={activar} disabled={procesando} className="notif-btn-off font-medium px-4 py-2 rounded-lg text-sm hover:bg-gray-50">{procesando ? 'Activando…' : '🔔 Activar notificaciones'}</button>;
 }
 
-function VistaNotas() {
+function VistaNotas({ session, perfil, vistaAdmin }) {
   const [notas, setNotas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1080,19 +1177,32 @@ function VistaNotas() {
   const [editando, setEditando] = useState(null);
   const [busqueda, setBusqueda] = useState('');
   const [filtro, setFiltro] = useState('Todas');
+  const [filtroUsuario, setFiltroUsuario] = useState('Todos');
+  const [usuariosMap, setUsuariosMap] = useState({});
   const [tick, setTick] = useState(0);
+
+  const esAdmin = perfil?.rol === 'admin';
 
   async function cargar() {
     setLoading(true); setError('');
-    const { data, error } = await supabase
-      .from('notas_rapidas').select('*')
+    let query = supabase.from('notas_rapidas').select('*')
       .order('fecha', { ascending: false })
       .order('created_at', { ascending: false });
+    if (!vistaAdmin) query = query.eq('user_id', session.user.id);
+    const { data, error } = await query;
     if (error) { setError('Error al cargar: ' + error.message); setNotas([]); }
     else setNotas(data || []);
+
+    if (vistaAdmin) {
+      const { data: profiles } = await supabase.from('bitacora_profiles').select('id, nombre, email');
+      const map = {};
+      (profiles || []).forEach(p => { map[p.id] = p; });
+      setUsuariosMap(map);
+    }
     setLoading(false);
   }
-  useEffect(() => { cargar(); }, []);
+
+  useEffect(() => { cargar(); }, [vistaAdmin]);
   useEffect(() => { const i = setInterval(() => setTick(t => t + 1), 60000); return () => clearInterval(i); }, []);
 
   async function guardar(datos, id) {
@@ -1100,7 +1210,7 @@ function VistaNotas() {
       const { error } = await supabase.from('notas_rapidas').update(datos).eq('id', editando.id);
       if (error) return alert('Error al actualizar: ' + error.message);
     } else {
-      const { error } = await supabase.from('notas_rapidas').insert([{ id, ...datos }]);
+      const { error } = await supabase.from('notas_rapidas').insert([{ id, user_id: session.user.id, ...datos }]);
       if (error) return alert('Error al guardar: ' + error.message);
     }
     setModalAbierto(false); setEditando(null); cargar();
@@ -1119,32 +1229,46 @@ function VistaNotas() {
 
   const notasFiltradas = useMemo(() => notas.filter(n => {
     if (busqueda && !(n.nota || '').toLowerCase().includes(busqueda.toLowerCase())) return false;
+    if (vistaAdmin && filtroUsuario !== 'Todos' && n.user_id !== filtroUsuario) return false;
     if (filtro === 'Con recordatorio' && !n.recordatorio) return false;
     if (filtro === 'Vencidas') { if (!n.recordatorio) return false; if (minutosHasta(n.recordatorio) >= 0) return false; }
     if (filtro === 'Próximas 24h') { if (!n.recordatorio) return false; const m = minutosHasta(n.recordatorio); if (m < 0 || m > 1440) return false; }
     if (filtro === 'Esta semana') { if (!n.recordatorio) return false; const m = minutosHasta(n.recordatorio); if (m < 0 || m > 10080) return false; }
     return true;
-  }), [notas, busqueda, filtro, tick]);
+  }), [notas, busqueda, filtro, filtroUsuario, tick, vistaAdmin]);
 
   const stats = useMemo(() => {
-    const conRec = notas.filter(n => n.recordatorio);
+    const conRec = notasFiltradas.filter(n => n.recordatorio);
     return {
-      total: notas.length,
+      total: notasFiltradas.length,
       conRecordatorio: conRec.length,
       vencidas: conRec.filter(n => minutosHasta(n.recordatorio) < 0).length,
       proximas: conRec.filter(n => { const m = minutosHasta(n.recordatorio); return m >= 0 && m <= 1440; }).length,
     };
-  }, [notas, tick]);
+  }, [notasFiltradas, tick]);
+
+  const usuariosUnicos = useMemo(() => {
+    if (!vistaAdmin) return [];
+    return Array.from(new Set(notas.map(n => n.user_id))).map(uid => usuariosMap[uid]).filter(Boolean);
+  }, [notas, usuariosMap, vistaAdmin]);
 
   return (
     <div>
-      <div className="flex justify-end mb-4 gap-3 flex-wrap">
-        <BotonNotificaciones />
-        <button onClick={() => { setEditando(null); setModalAbierto(true); }}
-          className="pt-btn text-white font-semibold px-5 py-2.5 rounded-lg shadow-sm">
-          + Nueva nota
-        </button>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
+        {vistaAdmin && (
+          <div className="bg-pink-50 border border-pink-200 text-pink-900 text-sm font-semibold px-3 py-1.5 rounded-lg">
+            🔍 Vista administrador
+          </div>
+        )}
+        <div className="flex-1"></div>
+        {!vistaAdmin && (
+          <>
+            <BotonNotificaciones userId={session.user.id} />
+            <button onClick={() => { setEditando(null); setModalAbierto(true); }} className="pt-btn text-white font-semibold px-5 py-2.5 rounded-lg shadow-sm">+ Nueva nota</button>
+          </>
+        )}
       </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
           <div className="text-sm text-gray-500 font-medium">Total notas</div>
@@ -1163,6 +1287,7 @@ function VistaNotas() {
           <div className="text-3xl font-bold text-amber-700 mt-1">{stats.proximas}</div>
         </div>
       </div>
+
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-4 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
         <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)}
           placeholder="Buscar en notas…"
@@ -1175,54 +1300,146 @@ function VistaNotas() {
           <option value="Próximas 24h">Próximas 24h</option>
           <option value="Esta semana">Esta semana</option>
         </select>
+        {vistaAdmin && (
+          <select value={filtroUsuario} onChange={e => setFiltroUsuario(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-green-700">
+            <option value="Todos">Todos los usuarios</option>
+            {usuariosUnicos.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+          </select>
+        )}
       </div>
+
       {error && <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 text-sm rounded-xl mb-4">{error}</div>}
       {loading ? <div className="bg-white rounded-xl p-12 text-center empty-state border border-gray-100">Cargando…</div>
       : notasFiltradas.length === 0 ? (
         <div className="bg-white rounded-xl p-12 text-center empty-state border border-gray-100">
-          {notas.length === 0 ? 'Aún no hay notas. Hacé clic en "Nueva nota" para comenzar.' : 'No hay notas que coincidan con los filtros.'}
+          {notas.length === 0 ? (vistaAdmin ? 'Aún no hay notas en el sistema.' : 'Aún no hay notas. Hacé clic en "Nueva nota" para comenzar.') : 'No hay notas que coincidan con los filtros.'}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {notasFiltradas.map(n => (
-            <PostItCard key={n.id} nota={n}
-              onEdit={(nota) => { setEditando(nota); setModalAbierto(true); }}
-              onDelete={eliminar} />
+            <PostItCard key={n.id} nota={n} usuariosMap={usuariosMap} mostrarUsuario={vistaAdmin}
+              onEdit={(n.user_id === session.user.id || esAdmin) ? ((nota) => { setEditando(nota); setModalAbierto(true); }) : null}
+              onDelete={(n.user_id === session.user.id || esAdmin) ? eliminar : null} />
           ))}
         </div>
       )}
+
       <Modal open={modalAbierto} onClose={() => { setModalAbierto(false); setEditando(null); }}
         title={editando ? 'Editar nota' : 'Nueva nota'}>
-        <NotaForm initial={editando} onSubmit={guardar}
+        <NotaForm initial={editando} onSubmit={guardar} userId={session.user.id}
           onCancel={() => { setModalAbierto(false); setEditando(null); }} />
       </Modal>
     </div>
   );
 }
 
-/* ==================== APP ==================== */
+/* ==================== APP ROOT ==================== */
 
 function App() {
+  const [session, setSession] = useState(null);
+  const [perfil, setPerfil] = useState(null);
+  const [cargando, setCargando] = useState(true);
   const [tab, setTab] = useState('bitacora');
+  const [vistaAdmin, setVistaAdmin] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) cargarPerfil(session.user.id);
+      else setCargando(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) cargarPerfil(session.user.id);
+      else { setPerfil(null); setCargando(false); }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  async function cargarPerfil(userId) {
+    const { data, error } = await supabase.from('bitacora_profiles').select('*').eq('id', userId).maybeSingle();
+    if (error) console.error('Error cargando perfil:', error);
+    setPerfil(data);
+    setCargando(false);
+  }
+
+  async function cerrarSesion() {
+    if (!confirm('¿Cerrar sesión?')) return;
+    await supabase.auth.signOut();
+  }
+
+  if (cargando) {
+    return <div className="min-h-screen flex items-center justify-center text-gray-500">Cargando…</div>;
+  }
+
+  if (!session) {
+    return <PantallaAuth />;
+  }
+
+  // Sesión activa pero perfil aún no creado (caso edge: email no @parquetempisque.com)
+  if (!perfil) {
+    return (
+      <div className="auth-bg">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center">
+          <h2 className="text-xl font-bold pt-text mb-3">Acceso restringido</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Tu cuenta no tiene un perfil de Bitácora IT asociado. Esta aplicación está reservada para personal de Parque Tempisque con correo {DOMINIO_PERMITIDO}.
+          </p>
+          <button onClick={cerrarSesion} className="pt-btn text-white font-semibold px-5 py-2 rounded-lg">
+            Cerrar sesión
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const esAdmin = perfil.rol === 'admin';
+
   return (
     <div className="min-h-screen">
       <header className="pt-bg text-white shadow-md">
         <div className="max-w-6xl mx-auto px-6 pt-5">
-          <div className="flex items-center gap-4 mb-4">
-            <img src="https://vr506.com/assets/logo%20pt.png" alt="Parque Tempisque" className="h-12 w-auto bg-white rounded-lg p-1.5" />
-            <div>
-              <h1 className="text-2xl font-bold">Bitácora IT</h1>
-              <p className="text-sm opacity-90">Parque Tempisque · Encargado de Tecnologías de Información</p>
+          <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
+            <div className="flex items-center gap-4">
+              <img src="https://vr506.com/assets/logo%20pt.png" alt="Parque Tempisque" className="h-12 w-auto bg-white rounded-lg p-1.5" />
+              <div>
+                <h1 className="text-2xl font-bold">Bitácora IT</h1>
+                <p className="text-sm opacity-90">Parque Tempisque</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <div className="font-semibold flex items-center gap-2 justify-end">
+                  {perfil.nombre}
+                  {esAdmin && <span className="badge-admin text-xs px-2 py-0.5 rounded-full font-bold">ADMIN</span>}
+                </div>
+                <div className="text-xs opacity-80">{perfil.email}</div>
+              </div>
+              <button onClick={cerrarSesion} title="Cerrar sesión"
+                className="bg-white/10 hover:bg-white/20 border border-white/30 px-3 py-1.5 rounded-lg text-sm font-semibold">
+                Salir
+              </button>
             </div>
           </div>
-          <div className="flex border-b border-white/20">
-            <div className={`tab-btn ${tab === 'bitacora' ? 'active' : ''}`} onClick={() => setTab('bitacora')}>📋 Bitácora</div>
-            <div className={`tab-btn ${tab === 'notas' ? 'active' : ''}`} onClick={() => setTab('notas')}>📝 Notas rápidas</div>
+          <div className="flex border-b border-white/20 flex-wrap">
+            <div className={`tab-btn ${tab === 'bitacora' && !vistaAdmin ? 'active' : ''}`} onClick={() => { setTab('bitacora'); setVistaAdmin(false); }}>📋 Mi bitácora</div>
+            <div className={`tab-btn ${tab === 'notas' && !vistaAdmin ? 'active' : ''}`} onClick={() => { setTab('notas'); setVistaAdmin(false); }}>📝 Mis notas</div>
+            {esAdmin && (
+              <>
+                <div className={`tab-btn ${tab === 'bitacora' && vistaAdmin ? 'active' : ''}`} onClick={() => { setTab('bitacora'); setVistaAdmin(true); }}>👥 Bitácora (todos)</div>
+                <div className={`tab-btn ${tab === 'notas' && vistaAdmin ? 'active' : ''}`} onClick={() => { setTab('notas'); setVistaAdmin(true); }}>👥 Notas (todos)</div>
+              </>
+            )}
           </div>
         </div>
       </header>
+
       <main className="max-w-6xl mx-auto px-6 py-8">
-        {tab === 'bitacora' ? <VistaBitacora /> : <VistaNotas />}
+        {tab === 'bitacora'
+          ? <VistaBitacora key={vistaAdmin ? 'admin' : 'user'} session={session} perfil={perfil} vistaAdmin={vistaAdmin} />
+          : <VistaNotas key={vistaAdmin ? 'admin' : 'user'} session={session} perfil={perfil} vistaAdmin={vistaAdmin} />
+        }
         <footer className="text-center text-xs text-gray-400 mt-8">
           Parque Tempisque · Bitácora IT · {new Date().getFullYear()}
         </footer>
