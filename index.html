@@ -59,10 +59,7 @@
     display: flex;
     flex-direction: column;
   }
-  .postit:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-  }
+  .postit:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
   .postit-yellow { background: #fef9c3; border: 1px solid #fde68a; }
   .postit-green { background: #dcfce7; border: 1px solid #bbf7d0; }
   .postit-blue { background: #dbeafe; border: 1px solid #bfdbfe; }
@@ -70,6 +67,8 @@
   .postit-orange { background: #ffedd5; border: 1px solid #fed7aa; }
   .recordatorio-vencido { background: #fee2e2 !important; border: 1px solid #fca5a5 !important; }
   .recordatorio-proximo { background: #fef3c7 !important; border: 1px solid #fcd34d !important; }
+  .notif-btn-on { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+  .notif-btn-off { background: white; color: #374151; border: 1px solid #d1d5db; }
 </style>
 </head>
 <body>
@@ -80,6 +79,9 @@ const { useState, useEffect, useMemo } = React;
 
 const SUPABASE_URL = 'https://vcdgurkuoqsdvwvpnevr.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZjZGd1cmt1b3FzZHZ3dnBuZXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjYxNDQsImV4cCI6MjA4ODMwMjE0NH0._fC7LXnggqXyniyOAb2orZj-QHY1_Xrf_-FnKVju9S8';
+const VAPID_PUBLIC_KEY = 'BPocEbVPgChTKG9y8NRkohuCfMxNCKl1bmoXOnYL7Zv56q0KF6T6MFrQWoDkoVgaHODCL2LBPvZOb61-eY3aHmE';
+const NOTIF_EMAIL = 'acamposp@parquetempisque.com';
+
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const ESTADOS = ['Pendiente', 'En curso', 'Completado'];
@@ -98,6 +100,17 @@ function formatFecha(fechaStr) {
   return `${d}/${m}/${y}`;
 }
 
+function formatFechaHora(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+}
+
 function hoyISO() {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -106,18 +119,75 @@ function hoyISO() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function diasHasta(fechaISO) {
-  if (!fechaISO) return null;
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  const [y, m, d] = fechaISO.split('-').map(Number);
-  const objetivo = new Date(y, m - 1, d);
-  const diffMs = objetivo - hoy;
-  return Math.round(diffMs / (1000 * 60 * 60 * 24));
+// Convierte un ISO timestamptz a formato datetime-local (YYYY-MM-DDTHH:mm) en hora local
+function isoADatetimeLocal(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+}
+
+// Convierte un datetime-local (YYYY-MM-DDTHH:mm) a ISO con zona local
+function datetimeLocalAISO(dtLocal) {
+  if (!dtLocal) return null;
+  // new Date interpreta el string sin Z como hora local
+  return new Date(dtLocal).toISOString();
+}
+
+// Diferencia en minutos entre el recordatorio y ahora
+function minutosHasta(isoStr) {
+  if (!isoStr) return null;
+  const objetivo = new Date(isoStr);
+  const ahora = new Date();
+  return Math.round((objetivo - ahora) / 60000);
+}
+
+// Texto descriptivo del tiempo faltante o pasado
+function describirTiempo(isoStr) {
+  const mins = minutosHasta(isoStr);
+  if (mins === null) return '';
+  const absMin = Math.abs(mins);
+  const pasado = mins < 0;
+
+  let texto;
+  if (absMin < 1) texto = 'Ahora mismo';
+  else if (absMin < 60) texto = `${absMin} min`;
+  else if (absMin < 1440) {
+    const h = Math.floor(absMin / 60);
+    const m = absMin % 60;
+    texto = m === 0 ? `${h}h` : `${h}h ${m}min`;
+  } else {
+    const d = Math.floor(absMin / 1440);
+    const h = Math.floor((absMin % 1440) / 60);
+    texto = h === 0 ? `${d} día${d !== 1 ? 's' : ''}` : `${d}d ${h}h`;
+  }
+  return pasado ? `Vencido hace ${texto}` : `En ${texto}`;
+}
+
+// Categoría visual del recordatorio
+function categoriaRecordatorio(isoStr) {
+  const mins = minutosHasta(isoStr);
+  if (mins === null) return 'sin';
+  if (mins < 0) return 'vencido';
+  if (mins <= 1440) return 'proximo'; // ≤ 24h
+  return 'futuro';
 }
 
 function pickColor(id) {
-  return POSTIT_COLORS[Math.abs(id) % POSTIT_COLORS.length];
+  return POSTIT_COLORS[Math.abs(Number(id)) % POSTIT_COLORS.length];
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
 }
 
 function Modal({ open, onClose, title, children }) {
@@ -313,7 +383,6 @@ function VistaBitacora() {
           + Nueva entrada
         </button>
       </div>
-
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
           <div className="text-sm text-gray-500 font-medium">Total</div>
@@ -332,7 +401,6 @@ function VistaBitacora() {
           <div className="text-3xl font-bold text-emerald-700 mt-1">{stats.completado}</div>
         </div>
       </div>
-
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-4 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
         <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)}
           placeholder="Buscar por título o descripción…"
@@ -349,7 +417,6 @@ function VistaBitacora() {
           Exportar PDF
         </button>
       </div>
-
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {error && <div className="bg-red-50 border-b border-red-200 text-red-800 px-4 py-3 text-sm">{error}</div>}
         {loading ? <div className="p-12 text-center empty-state">Cargando…</div>
@@ -390,7 +457,6 @@ function VistaBitacora() {
           </div>
         )}
       </div>
-
       <Modal open={modalAbierto} onClose={() => { setModalAbierto(false); setEditando(null); }}
         title={editando ? 'Editar entrada' : 'Nueva entrada'}>
         <EntradaForm initial={editando} onSubmit={guardar}
@@ -405,21 +471,28 @@ function VistaBitacora() {
 function NotaForm({ initial, onSubmit, onCancel }) {
   const [fecha, setFecha] = useState(initial?.fecha || hoyISO());
   const [nota, setNota] = useState(initial?.nota || '');
-  const [recordatorio, setRecordatorio] = useState(initial?.recordatorio || '');
+  const [recordatorio, setRecordatorio] = useState(initial?.recordatorio ? isoADatetimeLocal(initial.recordatorio) : '');
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit() {
     if (!nota.trim()) return alert('La nota no puede estar vacía');
     if (!fecha) return alert('La fecha es obligatoria');
     setSaving(true);
-    await onSubmit({ fecha, nota: nota.trim(), recordatorio: recordatorio || null });
+    const recordatorioISO = recordatorio ? datetimeLocalAISO(recordatorio) : null;
+    await onSubmit({
+      fecha,
+      nota: nota.trim(),
+      recordatorio: recordatorioISO,
+      // Si se cambia el recordatorio, reseteamos las flags de notificación
+      ...(recordatorioISO !== initial?.recordatorio ? { notificado_push: false, notificado_email: false } : {})
+    });
     setSaving(false);
   }
 
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1">Fecha</label>
+        <label className="block text-sm font-semibold text-gray-700 mb-1">Fecha de la nota</label>
         <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
       </div>
@@ -431,10 +504,10 @@ function NotaForm({ initial, onSubmit, onCancel }) {
       </div>
       <div>
         <label className="block text-sm font-semibold text-gray-700 mb-1">
-          Recordatorio <span className="text-gray-400 font-normal">(opcional)</span>
+          Recordatorio <span className="text-gray-400 font-normal">(fecha y hora — opcional)</span>
         </label>
         <div className="flex gap-2">
-          <input type="date" value={recordatorio} onChange={e => setRecordatorio(e.target.value)}
+          <input type="datetime-local" value={recordatorio} onChange={e => setRecordatorio(e.target.value)}
             className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-700" />
           {recordatorio && (
             <button onClick={() => setRecordatorio('')} type="button"
@@ -443,6 +516,11 @@ function NotaForm({ initial, onSubmit, onCancel }) {
             </button>
           )}
         </div>
+        {recordatorio && (
+          <p className="text-xs text-gray-500 mt-1">
+            Te notificaremos por push y por email a las {recordatorio.split('T')[1] || '--:--'} del {recordatorio.split('T')[0] || ''}.
+          </p>
+        )}
       </div>
       <div className="flex gap-3 pt-2">
         <button onClick={handleSubmit} disabled={saving}
@@ -459,31 +537,20 @@ function NotaForm({ initial, onSubmit, onCancel }) {
 }
 
 function PostItCard({ nota, onEdit, onDelete }) {
-  const dias = nota.recordatorio ? diasHasta(nota.recordatorio) : null;
+  const cat = categoriaRecordatorio(nota.recordatorio);
   let recordatorioClase = '';
-  let recordatorioTexto = '';
-  let recordatorioColor = '';
+  let recordatorioColor = 'text-gray-600';
 
-  if (dias !== null) {
-    if (dias < 0) {
-      recordatorioClase = 'recordatorio-vencido';
-      recordatorioTexto = `Vencido hace ${Math.abs(dias)} día${Math.abs(dias) !== 1 ? 's' : ''}`;
-      recordatorioColor = 'text-red-700';
-    } else if (dias === 0) {
-      recordatorioClase = 'recordatorio-proximo';
-      recordatorioTexto = 'Hoy';
-      recordatorioColor = 'text-amber-700';
-    } else if (dias <= 7) {
-      recordatorioClase = 'recordatorio-proximo';
-      recordatorioTexto = `En ${dias} día${dias !== 1 ? 's' : ''}`;
-      recordatorioColor = 'text-amber-700';
-    } else {
-      recordatorioTexto = `En ${dias} días`;
-      recordatorioColor = 'text-gray-600';
-    }
+  if (cat === 'vencido') {
+    recordatorioClase = 'recordatorio-vencido';
+    recordatorioColor = 'text-red-700';
+  } else if (cat === 'proximo') {
+    recordatorioClase = 'recordatorio-proximo';
+    recordatorioColor = 'text-amber-700';
   }
 
   const colorBase = recordatorioClase || pickColor(nota.id);
+  const textoTiempo = nota.recordatorio ? describirTiempo(nota.recordatorio) : '';
 
   return (
     <div className={`postit ${colorBase}`}>
@@ -499,16 +566,143 @@ function PostItCard({ nota, onEdit, onDelete }) {
       <div className="flex-1 text-gray-800 text-sm whitespace-pre-wrap break-words">{nota.nota}</div>
       {nota.recordatorio && (
         <div className="mt-3 pt-2 border-t border-black/10">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs">⏰</span>
-            <div className="text-xs">
-              <span className="font-semibold text-gray-700">{formatFecha(nota.recordatorio)}</span>
-              <span className={`ml-2 font-semibold ${recordatorioColor}`}>· {recordatorioTexto}</span>
+          <div className="flex items-start gap-1.5">
+            <span className="text-xs mt-0.5">⏰</span>
+            <div className="text-xs leading-tight">
+              <div className="font-semibold text-gray-700">{formatFechaHora(nota.recordatorio)}</div>
+              <div className={`font-semibold ${recordatorioColor} mt-0.5`}>{textoTiempo}</div>
             </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function BotonNotificaciones() {
+  const [estado, setEstado] = useState('cargando'); // cargando, no-soportado, denegado, no-suscrito, suscrito
+  const [procesando, setProcesando] = useState(false);
+
+  useEffect(() => {
+    verificarEstado();
+  }, []);
+
+  async function verificarEstado() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setEstado('no-soportado');
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      setEstado('denegado');
+      return;
+    }
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (!reg) {
+        setEstado('no-suscrito');
+        return;
+      }
+      const sub = await reg.pushManager.getSubscription();
+      setEstado(sub ? 'suscrito' : 'no-suscrito');
+    } catch (e) {
+      setEstado('no-suscrito');
+    }
+  }
+
+  async function activar() {
+    setProcesando(true);
+    try {
+      // Registrar service worker
+      const reg = await navigator.serviceWorker.register('./sw.js');
+      await navigator.serviceWorker.ready;
+
+      // Pedir permiso
+      const permiso = await Notification.requestPermission();
+      if (permiso !== 'granted') {
+        setEstado(permiso === 'denied' ? 'denegado' : 'no-suscrito');
+        setProcesando(false);
+        return;
+      }
+
+      // Crear suscripción
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+
+      // Guardar en Supabase
+      const subJSON = sub.toJSON();
+      const { error } = await supabase.from('push_subscriptions').upsert({
+        id: Date.now(),
+        endpoint: subJSON.endpoint,
+        keys: subJSON.keys,
+        user_agent: navigator.userAgent
+      }, { onConflict: 'endpoint' });
+
+      if (error) {
+        alert('Error guardando suscripción: ' + error.message);
+        setProcesando(false);
+        return;
+      }
+
+      setEstado('suscrito');
+      alert('¡Notificaciones activadas! Te avisaremos cuando se cumpla un recordatorio.');
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+    setProcesando(false);
+  }
+
+  async function desactivar() {
+    setProcesando(true);
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) {
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
+          await sub.unsubscribe();
+        }
+      }
+      setEstado('no-suscrito');
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+    setProcesando(false);
+  }
+
+  if (estado === 'cargando') return null;
+
+  if (estado === 'no-soportado') {
+    return (
+      <button disabled className="notif-btn-off font-medium px-4 py-2 rounded-lg opacity-50 text-sm">
+        🔕 Notificaciones no soportadas
+      </button>
+    );
+  }
+
+  if (estado === 'denegado') {
+    return (
+      <button disabled className="notif-btn-off font-medium px-4 py-2 rounded-lg opacity-50 text-sm" title="Habilítalo desde la configuración del navegador">
+        🔕 Permisos bloqueados
+      </button>
+    );
+  }
+
+  if (estado === 'suscrito') {
+    return (
+      <button onClick={desactivar} disabled={procesando}
+        className="notif-btn-on font-medium px-4 py-2 rounded-lg text-sm">
+        {procesando ? '...' : '🔔 Notificaciones activas'}
+      </button>
+    );
+  }
+
+  return (
+    <button onClick={activar} disabled={procesando}
+      className="notif-btn-off font-medium px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
+      {procesando ? 'Activando…' : '🔔 Activar notificaciones'}
+    </button>
   );
 }
 
@@ -520,6 +714,7 @@ function VistaNotas() {
   const [editando, setEditando] = useState(null);
   const [busqueda, setBusqueda] = useState('');
   const [filtro, setFiltro] = useState('Todas');
+  const [tick, setTick] = useState(0); // para refrescar cálculos de tiempo
 
   async function cargar() {
     setLoading(true); setError('');
@@ -532,6 +727,12 @@ function VistaNotas() {
     setLoading(false);
   }
   useEffect(() => { cargar(); }, []);
+
+  // Refresca cada minuto para que los textos "En 5 min" se actualicen
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   async function guardar(datos) {
     if (editando) {
@@ -556,29 +757,35 @@ function VistaNotas() {
     if (filtro === 'Con recordatorio' && !n.recordatorio) return false;
     if (filtro === 'Vencidas') {
       if (!n.recordatorio) return false;
-      if (diasHasta(n.recordatorio) >= 0) return false;
+      if (minutosHasta(n.recordatorio) >= 0) return false;
     }
-    if (filtro === 'Próximas 7 días') {
+    if (filtro === 'Próximas 24h') {
       if (!n.recordatorio) return false;
-      const d = diasHasta(n.recordatorio);
-      if (d < 0 || d > 7) return false;
+      const m = minutosHasta(n.recordatorio);
+      if (m < 0 || m > 1440) return false;
+    }
+    if (filtro === 'Esta semana') {
+      if (!n.recordatorio) return false;
+      const m = minutosHasta(n.recordatorio);
+      if (m < 0 || m > 10080) return false;
     }
     return true;
-  }), [notas, busqueda, filtro]);
+  }), [notas, busqueda, filtro, tick]);
 
   const stats = useMemo(() => {
     const conRec = notas.filter(n => n.recordatorio);
     return {
       total: notas.length,
       conRecordatorio: conRec.length,
-      vencidas: conRec.filter(n => diasHasta(n.recordatorio) < 0).length,
-      proximas: conRec.filter(n => { const d = diasHasta(n.recordatorio); return d >= 0 && d <= 7; }).length,
+      vencidas: conRec.filter(n => minutosHasta(n.recordatorio) < 0).length,
+      proximas: conRec.filter(n => { const m = minutosHasta(n.recordatorio); return m >= 0 && m <= 1440; }).length,
     };
-  }, [notas]);
+  }, [notas, tick]);
 
   return (
     <div>
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end mb-4 gap-3 flex-wrap">
+        <BotonNotificaciones />
         <button onClick={() => { setEditando(null); setModalAbierto(true); }}
           className="pt-btn text-white font-semibold px-5 py-2.5 rounded-lg shadow-sm">
           + Nueva nota
@@ -599,7 +806,7 @@ function VistaNotas() {
           <div className="text-3xl font-bold text-red-700 mt-1">{stats.vencidas}</div>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <div className="text-sm text-gray-500 font-medium">Próximas 7 días</div>
+          <div className="text-sm text-gray-500 font-medium">Próximas 24h</div>
           <div className="text-3xl font-bold text-amber-700 mt-1">{stats.proximas}</div>
         </div>
       </div>
@@ -613,7 +820,8 @@ function VistaNotas() {
           <option value="Todas">Todas</option>
           <option value="Con recordatorio">Con recordatorio</option>
           <option value="Vencidas">Vencidas</option>
-          <option value="Próximas 7 días">Próximas 7 días</option>
+          <option value="Próximas 24h">Próximas 24h</option>
+          <option value="Esta semana">Esta semana</option>
         </select>
       </div>
 
